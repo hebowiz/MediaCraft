@@ -1,7 +1,19 @@
 import pytest
 from PySide6.QtCore import QPoint, Qt
+from PySide6.QtWidgets import QLabel
 
 from mediacraft.ui.control_bar import ControlBar
+
+
+def assert_icon_is_white(button) -> None:
+    image = button.icon().pixmap(button.iconSize()).toImage()
+    visible_colors = {
+        image.pixelColor(x, y).getRgb()[:3]
+        for y in range(image.height())
+        for x in range(image.width())
+        if image.pixelColor(x, y).alpha() > 0
+    }
+    assert visible_colors == {(255, 255, 255)}
 
 
 def test_buttons_use_fixed_size_icons(qtbot) -> None:
@@ -25,6 +37,9 @@ def test_buttons_use_fixed_size_icons(qtbot) -> None:
     assert [button.size() for button in buttons] == original_sizes
     assert controls.play_button.accessibleName() == "一時停止"
     assert controls.fullscreen_button.accessibleName() == "フルスクリーン解除"
+    assert "速度" not in {label.text() for label in controls.findChildren(QLabel)}
+    for button in buttons:
+        assert_icon_is_white(button)
 
 
 def test_volume_click_jumps_to_pointer(qtbot) -> None:

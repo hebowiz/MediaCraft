@@ -1,4 +1,5 @@
 from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QColor, QIcon, QPainter
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -28,6 +29,7 @@ class ControlBar(QWidget):
         super().__init__(parent)
         self._duration = 0.0
         self._seeking = False
+        self._white_icon_cache: dict[QStyle.StandardPixmap, QIcon] = {}
 
         self.seek_slider = DirectSlider(Qt.Orientation.Horizontal)
         self.seek_slider.setRange(0, 10_000)
@@ -80,7 +82,6 @@ class ControlBar(QWidget):
         row.addWidget(self.stop_button)
         row.addWidget(self.time_label)
         row.addStretch(1)
-        row.addWidget(QLabel("速度"))
         row.addWidget(self.speed_combo)
         row.addWidget(self.mute_button)
         row.addWidget(self.volume_slider)
@@ -110,7 +111,7 @@ class ControlBar(QWidget):
     def set_playing(self, playing: bool) -> None:
         icon = QStyle.StandardPixmap.SP_MediaPause if playing else QStyle.StandardPixmap.SP_MediaPlay
         label = "一時停止" if playing else "再生"
-        self.play_button.setIcon(self.style().standardIcon(icon))
+        self.play_button.setIcon(self._white_standard_icon(icon))
         self.play_button.setToolTip(label)
         self.play_button.setAccessibleName(label)
 
@@ -121,7 +122,7 @@ class ControlBar(QWidget):
         self.volume_label.setText(f"{volume}%")
         icon = QStyle.StandardPixmap.SP_MediaVolumeMuted if muted else QStyle.StandardPixmap.SP_MediaVolume
         label = "ミュート解除" if muted else "ミュート"
-        self.mute_button.setIcon(self.style().standardIcon(icon))
+        self.mute_button.setIcon(self._white_standard_icon(icon))
         self.mute_button.setToolTip(label)
         self.mute_button.setAccessibleName(label)
 
@@ -132,7 +133,7 @@ class ControlBar(QWidget):
             else QStyle.StandardPixmap.SP_TitleBarMaxButton
         )
         label = "フルスクリーン解除" if fullscreen else "フルスクリーン"
-        self.fullscreen_button.setIcon(self.style().standardIcon(icon))
+        self.fullscreen_button.setIcon(self._white_standard_icon(icon))
         self.fullscreen_button.setToolTip(label)
         self.fullscreen_button.setAccessibleName(label)
 
@@ -169,6 +170,21 @@ class ControlBar(QWidget):
     ) -> None:
         button.setFixedSize(40, 34)
         button.setIconSize(QSize(20, 20))
-        button.setIcon(self.style().standardIcon(icon))
+        button.setIcon(self._white_standard_icon(icon))
         button.setToolTip(label)
         button.setAccessibleName(label)
+
+    def _white_standard_icon(self, icon: QStyle.StandardPixmap) -> QIcon:
+        cached = self._white_icon_cache.get(icon)
+        if cached is not None:
+            return cached
+
+        pixmap = self.style().standardIcon(icon).pixmap(QSize(20, 20))
+        painter = QPainter(pixmap)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+        painter.fillRect(pixmap.rect(), QColor(255, 255, 255))
+        painter.end()
+
+        white_icon = QIcon(pixmap)
+        self._white_icon_cache[icon] = white_icon
+        return white_icon

@@ -2,7 +2,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QMimeData, Qt, QTimer, Signal
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QMouseEvent, QWheelEvent
-from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QVBoxLayout
 
 
 class VideoWidget(QFrame):
@@ -15,6 +15,7 @@ class VideoWidget(QFrame):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setAcceptDrops(True)
+        self.setMouseTracking(True)
         self.setAttribute(Qt.WidgetAttribute.WA_NativeWindow)
         self.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors)
         self.setObjectName("videoWidget")
@@ -28,7 +29,7 @@ class VideoWidget(QFrame):
 
         self._click_timer = QTimer(self)
         self._click_timer.setSingleShot(True)
-        self._click_timer.setInterval(220)
+        self._click_timer.setInterval(QApplication.doubleClickInterval() + 50)
         self._click_timer.timeout.connect(self.clicked.emit)
 
     def set_media_loaded(self, loaded: bool) -> None:
@@ -57,6 +58,8 @@ class VideoWidget(QFrame):
         if event.button() == Qt.MouseButton.LeftButton:
             self._click_timer.stop()
             self.double_clicked.emit()
+            event.accept()
+            return
         super().mouseDoubleClickEvent(event)
 
     def wheelEvent(self, event: QWheelEvent) -> None:

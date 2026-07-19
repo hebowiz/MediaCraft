@@ -1,15 +1,16 @@
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QAction, QCloseEvent, QKeySequence, QShortcut, QShowEvent
-from PySide6.QtWidgets import QFileDialog, QMainWindow, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, QObject, QTimer, Qt
+from PySide6.QtGui import QAction, QCloseEvent, QKeySequence, QResizeEvent, QShortcut, QShowEvent
+from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QVBoxLayout, QWidget
 
 from mediacraft.app.settings import AppSettings
 from mediacraft.player.mpv_backend import MpvBackend
 from mediacraft.player.player_backend import PlayerBackend
 from mediacraft.player.player_controller import PlayerController
 from mediacraft.ui.control_bar import ControlBar
+from mediacraft.ui.fullscreen_overlay import FullscreenOverlay
 from mediacraft.ui.video_widget import VideoWidget
 
 logger = logging.getLogger(__name__)
@@ -25,18 +26,29 @@ class MainWindow(QMainWindow):
         self._settings = AppSettings()
         self._controller = PlayerController(backend or MpvBackend(), self)
         self._player_initialized = False
+        self._playback_active = False
         self._shortcuts: list[QShortcut] = []
 
         self.video_widget = VideoWidget()
         self.control_bar = ControlBar()
 
         central = QWidget()
-        layout = QVBoxLayout(central)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        layout.addWidget(self.video_widget, 1)
-        layout.addWidget(self.control_bar)
+        self._main_layout = QVBoxLayout(central)
+        self._main_layout.setContentsMargins(0, 0, 0, 0)
+        self._main_layout.setSpacing(0)
+        self._main_layout.addWidget(self.video_widget, 1)
+        self._main_layout.addWidget(self.control_bar)
         self.setCentralWidget(central)
+
+        self._fullscreen_overlay = FullscreenOverlay(self)
+        self._overlay_hide_timer = QTimer(self)
+        self._overlay_hide_timer.setSingleShot(True)
+        self._overlay_hide_timer.setInterval(2000)
+        self._overlay_hide_timer.timeout.connect(self._hide_fullscreen_overlay)
+
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
 
         self._create_menu()
         self._connect_signals()
@@ -50,9 +62,30 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, self._initialize_player)
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        app = QApplication.instance()
+        if app is not None:
+            app.removeEventFilter(self)
+        self._overlay_hide_timer.stop()
+        self._fullscreen_overlay.hide()
         self._save_settings()
         self._controller.shutdown()
         event.accept()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        if self.isFullScreen() and self._fullscreen_overlay.isVisible():
+            self._fullscreen_overlay.update_position(self)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        mouse_events = {
+            QEvent.Type.MouseMove,
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.MouseButtonDblClick,
+            QEvent.Type.Wheel,
+        }
+        if self.isFullScreen() and event.type() in mouse_events:
+            self._show_fullscreen_overlay()
+        return super().eventFilter(watched, event)
 
     def open_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -66,15 +99,57 @@ class MainWindow(QMainWindow):
 
     def toggle_fullscreen(self) -> None:
         if self.isFullScreen():
-            self.showNormal()
-            self.control_bar.set_fullscreen(False)
+            self._leave_fullscreen()
         else:
-            self.showFullScreen()
-            self.control_bar.set_fullscreen(True)
+            self._enter_fullscreen()
 
     def leave_fullscreen(self) -> None:
         if self.isFullScreen():
-            self.toggle_fullscreen()
+            self._leave_fullscreen()
+
+    def _enter_fullscreen(self) -> None:
+        self._main_layout.removeWidget(self.control_bar)
+        self._fullscreen_overlay.attach_control_bar(self.control_bar)
+        self.menuBar().hide()
+        self.statusBar().hide()
+        self.showFullScreen()
+        self.control_bar.set_fullscreen(True)
+        QTimer.singleShot(0, self._show_fullscreen_overlay)
+
+    def _leave_fullscreen(self) -> None:
+        self._overlay_hide_timer.stop()
+        self._fullscreen_overlay.hide()
+        control_bar = self._fullscreen_overlay.detach_control_bar()
+        if control_bar is not None:
+            self._main_layout.addWidget(control_bar)
+        self.menuBar().show()
+        self.statusBar().show()
+        self.showNormal()
+        self.control_bar.set_fullscreen(False)
+
+    def _show_fullscreen_overlay(self) -> None:
+        if not self.isFullScreen():
+            return
+        self._fullscreen_overlay.update_position(self)
+        self._fullscreen_overlay.show()
+        self._fullscreen_overlay.raise_()
+        if self._playback_active:
+            self._overlay_hide_timer.start()
+        else:
+            self._overlay_hide_timer.stop()
+
+    def _hide_fullscreen_overlay(self) -> None:
+        if self.isFullScreen() and self._playback_active:
+            self._fullscreen_overlay.hide()
+
+    def _on_playback_changed(self, playing: bool) -> None:
+        self._playback_active = playing
+        if not self.isFullScreen():
+            return
+        if playing:
+            self._overlay_hide_timer.start()
+        else:
+            self._show_fullscreen_overlay()
 
     def _initialize_player(self) -> None:
         if self._player_initialized:
@@ -142,6 +217,7 @@ class MainWindow(QMainWindow):
 
         self._controller.position_changed.connect(controls.set_position)
         self._controller.playback_changed.connect(controls.set_playing)
+        self._controller.playback_changed.connect(self._on_playback_changed)
         self._controller.volume_changed.connect(controls.set_volume)
         self._controller.speed_changed.connect(controls.set_speed)
         self._controller.error_occurred.connect(self._show_error)
