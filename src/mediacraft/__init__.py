@@ -1,0 +1,1 @@
+"""MediaCraft application package."""
