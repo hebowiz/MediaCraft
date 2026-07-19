@@ -6,7 +6,7 @@ from mediacraft.player.player_controller import PlayerController
 
 class FrameController(QObject):
     inspection_mode_changed = Signal(bool)
-    frame_display_changed = Signal(int, bool)
+    frame_display_changed = Signal(int, bool, float, object)
 
     def __init__(self, player: PlayerController, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -95,6 +95,11 @@ class FrameController(QObject):
         if state is PlaybackState.STOPPED:
             self._frame_number = 0
             self._emit_frame_display()
+        elif state is PlaybackState.NO_MEDIA:
+            self._frame_number = -1
+            self._probe_fps = 0.0
+            self._variable_frame_rate = None
+            self._emit_frame_display()
 
     def _leave_local_mode(self) -> None:
         if not self._inspection_mode:
@@ -106,4 +111,9 @@ class FrameController(QObject):
 
     def _emit_frame_display(self) -> None:
         approximate = self._variable_frame_rate is not False
-        self.frame_display_changed.emit(self._frame_number, approximate)
+        self.frame_display_changed.emit(
+            self._frame_number,
+            approximate,
+            self._probe_fps,
+            self._variable_frame_rate,
+        )

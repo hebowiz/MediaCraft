@@ -49,7 +49,7 @@ class ControlBar(QWidget):
         self.frame_back_button = QPushButton()
         self.frame_forward_button = QPushButton()
         self.time_label = QLabel("00:00:00 / 00:00:00")
-        self.frame_label = QLabel("Frame: --")
+        self.frame_label = QLabel("Frame: -- | -- FPS")
 
         self.speed_combo = QComboBox()
         self.speed_combo.setEditable(True)
@@ -148,12 +148,19 @@ class ControlBar(QWidget):
         formatter = format_time_millis if self._frame_inspection else format_time
         self.time_label.setText(f"{formatter(position)} / {formatter(duration)}")
 
-    def set_frame_info(self, frame_number: int, approximate: bool) -> None:
-        if frame_number < 0:
-            self.frame_label.setText("Frame: --")
-            return
-        prefix = "~" if approximate else ""
-        self.frame_label.setText(f"Frame: {prefix}{frame_number:,}")
+    def set_frame_info(
+        self,
+        frame_number: int,
+        _approximate: bool,
+        fps: float,
+        variable: object,
+    ) -> None:
+        frame_text = "--" if frame_number < 0 else f"{frame_number:,}"
+        if variable is True:
+            fps_text = "VFR"
+        else:
+            fps_text = f"{fps:.2f} FPS" if fps > 0 else "-- FPS"
+        self.frame_label.setText(f"Frame: {frame_text} | {fps_text}")
 
     def set_frame_inspection(self, enabled: bool) -> None:
         self._frame_inspection = enabled

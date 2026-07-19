@@ -29,17 +29,19 @@ def test_inspection_mode_pauses_and_throttles_repeated_steps(qtbot, tmp_path) ->
 
 def test_vfr_frame_display_is_marked_as_approximate(qtbot, tmp_path) -> None:
     _backend, player, frame = loaded_controllers(tmp_path)
-    received: list[tuple[int, bool]] = []
+    received: list[tuple[int, bool, float, object]] = []
     frame.frame_display_changed.connect(
-        lambda number, approximate: received.append((number, approximate))
+        lambda number, approximate, fps, variable: received.append(
+            (number, approximate, fps, variable)
+        )
     )
 
     frame.set_frame_rate_analysis(30.0, False)
     player.refresh()
-    assert received[-1] == (0, False)
+    assert received[-1] == (0, False, 30.0, False)
 
     frame.set_frame_rate_analysis(30.0, True)
-    assert received[-1] == (0, True)
+    assert received[-1] == (0, True, 30.0, True)
 
 
 def test_stop_exits_inspection_mode(qtbot, tmp_path) -> None:

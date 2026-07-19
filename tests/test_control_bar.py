@@ -51,11 +51,11 @@ def test_frame_inspection_shows_precision_and_simplifies_controls(qtbot) -> None
     qtbot.addWidget(controls)
     controls.show()
 
-    controls.set_frame_info(1234, True)
+    controls.set_frame_info(1234, True, 29.97, True)
     controls.set_frame_inspection(True)
     controls.set_position(1.234, 10.0)
 
-    assert controls.frame_label.text() == "Frame: ~1,234"
+    assert controls.frame_label.text() == "Frame: 1,234 | VFR"
     assert controls.time_label.text() == "00:00:01.234 / 00:00:10.000"
     assert not hasattr(controls, "frame_mode_button")
     assert not controls.speed_combo.isVisible()
@@ -64,6 +64,17 @@ def test_frame_inspection_shows_precision_and_simplifies_controls(qtbot) -> None
     controls.set_frame_inspection(False)
     controls.set_position(1.234, 10.0)
     assert controls.time_label.text() == "00:00:01 / 00:00:10"
+
+
+def test_cfr_frame_rate_is_displayed_as_fps(qtbot) -> None:
+    controls = ControlBar()
+    qtbot.addWidget(controls)
+
+    controls.set_frame_info(90, False, 60.0, False)
+    assert controls.frame_label.text() == "Frame: 90 | 60.00 FPS"
+
+    controls.set_frame_info(-1, True, 0.0, None)
+    assert controls.frame_label.text() == "Frame: -- | -- FPS"
 
 
 def test_volume_click_jumps_to_pointer(qtbot) -> None:
