@@ -21,8 +21,10 @@ def test_buttons_use_fixed_size_icons(qtbot) -> None:
     qtbot.addWidget(controls)
 
     buttons = (
+        controls.previous_button,
         controls.play_button,
         controls.stop_button,
+        controls.next_button,
         controls.frame_back_button,
         controls.frame_forward_button,
         controls.mute_button,
@@ -95,3 +97,15 @@ def test_seek_click_emits_clicked_position(qtbot) -> None:
         )
 
     assert blocker.args[0] == pytest.approx(50, abs=3)
+
+
+def test_speed_and_volume_stay_on_transport_row(qtbot) -> None:
+    controls = ControlBar()
+    qtbot.addWidget(controls)
+    controls.show()
+
+    transport_y = controls.fullscreen_button.geometry().center().y()
+    assert controls.speed_combo.geometry().center().y() == transport_y
+    assert controls.mute_button.geometry().center().y() == transport_y
+    assert controls.volume_slider.geometry().center().y() == transport_y
+    assert controls.seek_slider.geometry().center().y() < transport_y

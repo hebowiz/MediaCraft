@@ -77,3 +77,39 @@ def test_frame_step_pauses_playback_and_moves_requested_frames(qtbot, tmp_path) 
     assert controller.frame_step(-10)
     assert backend.frame_steps == [1, -10]
     assert controller.state is PlaybackState.FRAME_INSPECTION
+
+
+def test_media_end_is_reported_only_once(qtbot, tmp_path) -> None:
+    from conftest import FakeBackend
+
+    backend = FakeBackend()
+    controller = PlayerController(backend)
+    media_file = tmp_path / "sample.mp4"
+    media_file.touch()
+    controller.initialize(123)
+    controller.load_file(media_file)
+    ended: list[str] = []
+    controller.media_ended.connect(ended.append)
+
+    backend.ended = True
+    controller.refresh()
+    controller.refresh()
+
+    assert ended == [str(media_file.resolve())]
+    assert controller.state is PlaybackState.ENDED
+
+
+def test_clear_media_returns_controller_to_initial_state(qtbot, tmp_path) -> None:
+    from conftest import FakeBackend
+
+    backend = FakeBackend()
+    controller = PlayerController(backend)
+    media_file = tmp_path / "sample.mp4"
+    media_file.touch()
+    controller.initialize(123)
+    controller.load_file(media_file)
+
+    assert controller.clear_media()
+    assert backend.clear_called
+    assert controller.current_file is None
+    assert controller.state is PlaybackState.NO_MEDIA

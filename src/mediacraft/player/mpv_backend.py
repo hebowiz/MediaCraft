@@ -68,6 +68,12 @@ class MpvBackend(PlayerBackend):
 
         self._perform("停止できませんでした", stop_player)
 
+    def clear_media(self) -> None:
+        self._perform(
+            "動画を閉じられませんでした",
+            lambda player: player.command("stop"),
+        )
+
     def seek_absolute(self, seconds: float) -> None:
         self._perform(
             "シークできませんでした",
@@ -124,6 +130,13 @@ class MpvBackend(PlayerBackend):
         if container_fps > 0:
             return container_fps
         return self._number_property("estimated_vf_fps")
+
+    def has_ended(self) -> bool:
+        player = self._require_player()
+        try:
+            return bool(player.eof_reached)
+        except Exception:
+            return False
 
     def shutdown(self) -> None:
         if self._player is None:

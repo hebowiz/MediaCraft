@@ -12,6 +12,19 @@ class AppSettings:
     def set_window_geometry(self, geometry: QByteArray) -> None:
         self._settings.setValue("window/geometry", geometry)
 
+    def playlist_splitter_state(self) -> QByteArray:
+        value = self._settings.value("playlist/splitter_state", QByteArray())
+        return value if isinstance(value, QByteArray) else QByteArray()
+
+    def set_playlist_splitter_state(self, state: QByteArray) -> None:
+        self._settings.setValue("playlist/splitter_state", state)
+
+    def playlist_visible(self) -> bool:
+        return self._settings.value("playlist/visible", True, type=bool)
+
+    def set_playlist_visible(self, visible: bool) -> None:
+        self._settings.setValue("playlist/visible", visible)
+
     def volume(self) -> int:
         return max(0, min(100, int(self._settings.value("playback/volume", 100))))
 

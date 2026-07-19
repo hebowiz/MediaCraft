@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from mediacraft.player.player_backend import PlayerBackend
+from mediacraft.player.player_backend import BackendError, PlayerBackend
 
 
 class FakeBackend(PlayerBackend):
@@ -15,17 +15,25 @@ class FakeBackend(PlayerBackend):
         self.speed = 1.0
         self.fps = 30.0
         self.frame_steps: list[int] = []
+        self.ended = False
         self.shutdown_called = False
+        self.clear_called = False
+        self.fail_load_paths: set[Path] = set()
 
     def initialize(self, window_id: int) -> None:
         self.initialized = window_id >= 0
 
     def load(self, path: Path) -> None:
+        if path in self.fail_load_paths:
+            raise BackendError("テスト用の読み込みエラー")
         self.loaded_path = path
         self.paused = False
+        self.ended = False
+        self.current_position = 0.0
 
     def play(self) -> None:
         self.paused = False
+        self.ended = False
 
     def pause(self) -> None:
         self.paused = True
@@ -33,6 +41,14 @@ class FakeBackend(PlayerBackend):
     def stop(self) -> None:
         self.paused = True
         self.current_position = 0.0
+        self.ended = False
+
+    def clear_media(self) -> None:
+        self.loaded_path = None
+        self.paused = True
+        self.current_position = 0.0
+        self.ended = False
+        self.clear_called = True
 
     def seek_absolute(self, seconds: float) -> None:
         self.current_position = seconds
@@ -68,6 +84,9 @@ class FakeBackend(PlayerBackend):
 
     def frame_rate(self) -> float:
         return self.fps
+
+    def has_ended(self) -> bool:
+        return self.ended
 
     def shutdown(self) -> None:
         self.shutdown_called = True

@@ -17,6 +17,7 @@ class PlayerController(QObject):
     speed_changed = Signal(float)
     frame_metrics_changed = Signal(int, float)
     file_changed = Signal(str)
+    media_ended = Signal(str)
     error_occurred = Signal(str)
 
     def __init__(self, backend: PlayerBackend, parent: QObject | None = None) -> None:
@@ -29,6 +30,7 @@ class PlayerController(QObject):
         self._muted = False
         self._speed = 1.0
         self._frame_inspection = False
+        self._end_reported = False
 
         self._timer = QTimer(self)
         self._timer.setInterval(100)
@@ -91,6 +93,7 @@ class PlayerController(QObject):
 
         self._current_file = media_path
         self._frame_inspection = False
+        self._end_reported = False
         self.file_changed.emit(str(media_path))
         self._set_state(PlaybackState.PLAYING)
         self.playback_changed.emit(True)
@@ -102,6 +105,9 @@ class PlayerController(QObject):
         try:
             if self._backend.is_paused():
                 self._frame_inspection = False
+                if self._state is PlaybackState.ENDED:
+                    self._backend.seek_absolute(0.0)
+                    self._end_reported = False
                 self._backend.play()
                 self._set_state(PlaybackState.PLAYING)
                 self.playback_changed.emit(True)
@@ -126,14 +132,32 @@ class PlayerController(QObject):
             duration = 0.0
         self.position_changed.emit(0.0, duration)
         self._frame_inspection = False
+        self._end_reported = False
         self.playback_changed.emit(False)
         self._set_state(PlaybackState.STOPPED)
+
+    def clear_media(self) -> bool:
+        if self._initialized:
+            try:
+                self._backend.clear_media()
+            except BackendError as exc:
+                self._fail(str(exc))
+                return False
+        self._current_file = None
+        self._frame_inspection = False
+        self._end_reported = False
+        self.position_changed.emit(0.0, 0.0)
+        self.frame_metrics_changed.emit(-1, 0.0)
+        self.playback_changed.emit(False)
+        self._set_state(PlaybackState.NO_MEDIA)
+        return True
 
     def seek_absolute(self, seconds: float) -> None:
         if self._current_file is None:
             return
         try:
             self._backend.seek_absolute(seconds)
+            self._end_reported = False
         except BackendError as exc:
             self._fail(str(exc))
 
@@ -142,6 +166,7 @@ class PlayerController(QObject):
             return
         try:
             self._backend.seek_relative(seconds)
+            self._end_reported = False
         except BackendError as exc:
             self._fail(str(exc))
 
@@ -229,6 +254,7 @@ class PlayerController(QObject):
             paused = self._backend.is_paused()
             frame_number = self._backend.estimated_frame_number()
             frame_rate = self._backend.frame_rate()
+            ended = self._backend.has_ended()
         except BackendError as exc:
             self._fail(str(exc))
             return
@@ -236,6 +262,14 @@ class PlayerController(QObject):
         if frame_number is None and frame_rate > 0:
             frame_number = max(0, round(position * frame_rate))
         self.frame_metrics_changed.emit(frame_number if frame_number is not None else -1, frame_rate)
+        if ended:
+            if not self._end_reported:
+                self._end_reported = True
+                self._frame_inspection = False
+                self.playback_changed.emit(False)
+                self._set_state(PlaybackState.ENDED)
+                self.media_ended.emit(str(self._current_file))
+            return
         if self._state not in {PlaybackState.STOPPED, PlaybackState.ERROR}:
             if self._frame_inspection:
                 state = PlaybackState.FRAME_INSPECTION

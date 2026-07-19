@@ -15,8 +15,10 @@ from mediacraft.utils.time_format import format_time, format_time_millis
 
 
 class ControlBar(QWidget):
+    previous_requested = Signal()
     play_pause_requested = Signal()
     stop_requested = Signal()
+    next_requested = Signal()
     frame_back_requested = Signal()
     frame_forward_requested = Signal()
     seek_requested = Signal(float)
@@ -40,8 +42,10 @@ class ControlBar(QWidget):
         self.seek_slider.interaction_started.connect(self._on_seek_started)
         self.seek_slider.value_committed.connect(self._on_seek_finished)
 
+        self.previous_button = QPushButton()
         self.play_button = QPushButton()
         self.stop_button = QPushButton()
+        self.next_button = QPushButton()
         self.frame_back_button = QPushButton()
         self.frame_forward_button = QPushButton()
         self.time_label = QLabel("00:00:00 / 00:00:00")
@@ -63,6 +67,11 @@ class ControlBar(QWidget):
         self.fullscreen_button = QPushButton()
 
         self._configure_icon_button(
+            self.previous_button,
+            QStyle.StandardPixmap.SP_MediaSkipBackward,
+            "前のファイル",
+        )
+        self._configure_icon_button(
             self.play_button,
             QStyle.StandardPixmap.SP_MediaPlay,
             "再生",
@@ -71,6 +80,11 @@ class ControlBar(QWidget):
             self.stop_button,
             QStyle.StandardPixmap.SP_MediaStop,
             "停止",
+        )
+        self._configure_icon_button(
+            self.next_button,
+            QStyle.StandardPixmap.SP_MediaSkipForward,
+            "次のファイル",
         )
         self._configure_custom_icon_button(
             self.frame_back_button,
@@ -93,27 +107,31 @@ class ControlBar(QWidget):
             "フルスクリーン",
         )
 
-        row = QHBoxLayout()
-        row.addWidget(self.play_button)
-        row.addWidget(self.stop_button)
-        row.addWidget(self.frame_back_button)
-        row.addWidget(self.frame_forward_button)
-        row.addWidget(self.time_label)
-        row.addWidget(self.frame_label)
-        row.addStretch(1)
-        row.addWidget(self.speed_combo)
-        row.addWidget(self.mute_button)
-        row.addWidget(self.volume_slider)
-        row.addWidget(self.volume_label)
-        row.addWidget(self.fullscreen_button)
+        transport_row = QHBoxLayout()
+        transport_row.addWidget(self.previous_button)
+        transport_row.addWidget(self.play_button)
+        transport_row.addWidget(self.stop_button)
+        transport_row.addWidget(self.next_button)
+        transport_row.addWidget(self.frame_back_button)
+        transport_row.addWidget(self.frame_forward_button)
+        transport_row.addWidget(self.time_label)
+        transport_row.addWidget(self.frame_label)
+        transport_row.addStretch(1)
+        transport_row.addWidget(self.speed_combo)
+        transport_row.addWidget(self.mute_button)
+        transport_row.addWidget(self.volume_slider)
+        transport_row.addWidget(self.volume_label)
+        transport_row.addWidget(self.fullscreen_button)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 8, 12, 10)
         layout.addWidget(self.seek_slider)
-        layout.addLayout(row)
+        layout.addLayout(transport_row)
 
+        self.previous_button.clicked.connect(self.previous_requested.emit)
         self.play_button.clicked.connect(self.play_pause_requested.emit)
         self.stop_button.clicked.connect(self.stop_requested.emit)
+        self.next_button.clicked.connect(self.next_requested.emit)
         self.frame_back_button.clicked.connect(self.frame_back_requested.emit)
         self.frame_forward_button.clicked.connect(self.frame_forward_requested.emit)
         self.volume_slider.valueChanged.connect(self.volume_requested.emit)

@@ -1,8 +1,8 @@
-from pathlib import Path
-
-from PySide6.QtCore import QMimeData, Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QMouseEvent, QWheelEvent
 from PySide6.QtWidgets import QApplication, QFrame, QLabel, QVBoxLayout
+
+from mediacraft.utils.drop_paths import local_drop_paths
 
 
 class VideoWidget(QFrame):
@@ -36,15 +36,15 @@ class VideoWidget(QFrame):
         self._placeholder.setVisible(not loaded)
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
-        if self._local_files(event.mimeData()):
+        if local_drop_paths(event.mimeData()):
             event.acceptProposedAction()
         else:
             event.ignore()
 
     def dropEvent(self, event: QDropEvent) -> None:
-        files = self._local_files(event.mimeData())
-        if files:
-            self.files_dropped.emit(files)
+        paths = local_drop_paths(event.mimeData())
+        if paths:
+            self.files_dropped.emit(paths)
             event.acceptProposedAction()
         else:
             event.ignore()
@@ -72,13 +72,3 @@ class VideoWidget(QFrame):
             event.accept()
             return
         super().wheelEvent(event)
-
-    @staticmethod
-    def _local_files(mime_data: QMimeData) -> list[str]:
-        if not mime_data.hasUrls():
-            return []
-        return [
-            str(Path(url.toLocalFile()))
-            for url in mime_data.urls()
-            if url.isLocalFile() and Path(url.toLocalFile()).is_file()
-        ]

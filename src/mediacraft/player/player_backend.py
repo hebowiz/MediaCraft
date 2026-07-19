@@ -32,6 +32,10 @@ class PlayerBackend(ABC):
         pass
 
     @abstractmethod
+    def clear_media(self) -> None:
+        pass
+
+    @abstractmethod
     def seek_absolute(self, seconds: float) -> None:
         pass
 
@@ -73,6 +77,10 @@ class PlayerBackend(ABC):
 
     @abstractmethod
     def frame_rate(self) -> float:
+        pass
+
+    @abstractmethod
+    def has_ended(self) -> bool:
         pass
 
     @abstractmethod

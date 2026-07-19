@@ -2,8 +2,24 @@ import logging
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QTimer, Qt
-from PySide6.QtGui import QAction, QCloseEvent, QKeySequence, QResizeEvent, QShortcut, QShowEvent
-from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QVBoxLayout, QWidget
+from PySide6.QtGui import (
+    QAction,
+    QCloseEvent,
+    QDragEnterEvent,
+    QDropEvent,
+    QKeySequence,
+    QResizeEvent,
+    QShortcut,
+    QShowEvent,
+)
+from PySide6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QMainWindow,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
 
 from mediacraft.app.settings import AppSettings
 from mediacraft.frame.frame_controller import FrameController
@@ -11,36 +27,64 @@ from mediacraft.frame.media_probe import MediaProbe
 from mediacraft.player.mpv_backend import MpvBackend
 from mediacraft.player.player_backend import PlayerBackend
 from mediacraft.player.player_controller import PlayerController
+from mediacraft.player.playback_state import PlaybackState
+from mediacraft.playlist.playlist_controller import PlaylistController
+from mediacraft.playlist.metadata_probe import PlaylistMetadataProbe
 from mediacraft.ui.control_bar import ControlBar
 from mediacraft.ui.fullscreen_overlay import FullscreenOverlay
+from mediacraft.ui.playlist_panel import PlaylistPanel
 from mediacraft.ui.video_widget import VideoWidget
+from mediacraft.utils.drop_paths import local_drop_paths
 
 logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
+    MEDIA_FILTER = (
+        "メディアファイル (*.mp4 *.mkv *.avi *.mov *.wmv *.webm *.mpeg *.mpg "
+        "*.mts *.m2ts *.ts *.flv);;すべてのファイル (*)"
+    )
+    MEDIA_EXTENSIONS = {
+        ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm", ".mpeg", ".mpg",
+        ".mts", ".m2ts", ".ts", ".flv",
+    }
+
     def __init__(self, backend: PlayerBackend | None = None) -> None:
         super().__init__()
         self.setWindowTitle("MediaCraft")
+        self.setAcceptDrops(True)
         self.resize(1100, 700)
         self.setMinimumSize(720, 480)
 
         self._settings = AppSettings()
         self._controller = PlayerController(backend or MpvBackend(), self)
         self._frame_controller = FrameController(self._controller, self)
+        self._playlist_controller = PlaylistController(self)
+        self._playlist_metadata_probe = PlaylistMetadataProbe(self)
         self._media_probe = MediaProbe(self)
         self._player_initialized = False
         self._playback_active = False
         self._shortcuts: list[QShortcut] = []
+        self._playlist_was_visible = True
 
         self.video_widget = VideoWidget()
         self.control_bar = ControlBar()
+        self.playlist_panel = PlaylistPanel()
+        self.playlist_panel.setMinimumWidth(250)
+
+        self._content_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._content_splitter.setChildrenCollapsible(False)
+        self._content_splitter.addWidget(self.video_widget)
+        self._content_splitter.addWidget(self.playlist_panel)
+        self._content_splitter.setStretchFactor(0, 1)
+        self._content_splitter.setStretchFactor(1, 0)
+        self._content_splitter.setSizes([820, 280])
 
         central = QWidget()
         self._main_layout = QVBoxLayout(central)
         self._main_layout.setContentsMargins(0, 0, 0, 0)
         self._main_layout.setSpacing(0)
-        self._main_layout.addWidget(self.video_widget, 1)
+        self._main_layout.addWidget(self._content_splitter, 1)
         self._main_layout.addWidget(self.control_bar)
         self.setCentralWidget(central)
 
@@ -73,6 +117,7 @@ class MainWindow(QMainWindow):
         self._fullscreen_overlay.hide()
         self._save_settings()
         self._media_probe.shutdown()
+        self._playlist_metadata_probe.shutdown()
         self._controller.shutdown()
         event.accept()
 
@@ -80,6 +125,20 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         if self.isFullScreen() and self._fullscreen_overlay.isVisible():
             self._fullscreen_overlay.update_position(self)
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        if local_drop_paths(event.mimeData()):
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        paths = local_drop_paths(event.mimeData())
+        if paths:
+            self._replace_playlist_from_drop(paths)
+            event.acceptProposedAction()
+            return
+        super().dropEvent(event)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         mouse_events = {
@@ -97,10 +156,29 @@ class MainWindow(QMainWindow):
             self,
             "動画ファイルを開く",
             self._settings.last_directory(),
-            "メディアファイル (*.mp4 *.mkv *.avi *.mov *.wmv *.webm *.mpeg *.mpg *.mts *.m2ts *.ts *.flv);;すべてのファイル (*)",
+            self.MEDIA_FILTER,
         )
         if path:
-            self._load_file(path)
+            self._add_paths([path], play_first=True)
+
+    def add_files(self) -> None:
+        paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "動画ファイルをプレイリストへ追加",
+            self._settings.last_directory(),
+            self.MEDIA_FILTER,
+        )
+        if paths:
+            self._add_paths(paths, play_first=self._controller.current_file is None)
+
+    def add_folder(self) -> None:
+        path = QFileDialog.getExistingDirectory(
+            self,
+            "動画フォルダをプレイリストへ追加",
+            self._settings.last_directory(),
+        )
+        if path:
+            self._add_paths([path], play_first=self._controller.current_file is None)
 
     def toggle_fullscreen(self) -> None:
         if self.isFullScreen():
@@ -113,6 +191,8 @@ class MainWindow(QMainWindow):
             self._leave_fullscreen()
 
     def _enter_fullscreen(self) -> None:
+        self._playlist_was_visible = self.playlist_panel.isVisible()
+        self.playlist_panel.hide()
         self._main_layout.removeWidget(self.control_bar)
         self._fullscreen_overlay.attach_control_bar(self.control_bar)
         self.menuBar().hide()
@@ -130,6 +210,8 @@ class MainWindow(QMainWindow):
         self.menuBar().show()
         self.statusBar().show()
         self.showNormal()
+        if self._playlist_was_visible:
+            self.playlist_panel.show()
         self.control_bar.set_fullscreen(False)
 
     def _show_fullscreen_overlay(self) -> None:
@@ -167,20 +249,64 @@ class MainWindow(QMainWindow):
         if not self._player_initialized:
             self._show_error("再生エンジンが利用できないため、ファイルを開けません。")
             return
+        self._playlist_controller.add_files([path])
+        requested_index = self._playlist_controller.index_for_path(path)
         if self._controller.load_file(path):
             media_path = Path(path)
             self._settings.set_last_directory(str(media_path.parent))
             self.video_widget.set_media_loaded(True)
             self.setWindowTitle(f"{media_path.name} - MediaCraft")
             self.statusBar().showMessage(str(media_path), 5000)
+        elif requested_index + 1 < len(self._playlist_controller.entries):
+            QTimer.singleShot(
+                0,
+                lambda index=requested_index + 1: self._playlist_controller.request_play(index),
+            )
 
     def _load_dropped_files(self, paths: list[str]) -> None:
         if paths:
-            self._load_file(paths[0])
-            if len(paths) > 1:
-                self.statusBar().showMessage(
-                    "Phase 1では先頭の1ファイルのみ読み込みます。", 5000
+            self._replace_playlist_from_drop(paths)
+
+    def _replace_playlist_from_drop(self, paths: list[str]) -> None:
+        self._add_paths(paths, play_first=True, replace=True)
+
+    def _append_playlist_from_drop(self, paths: list[str]) -> None:
+        self._add_paths(paths, play_first=False)
+
+    def _add_paths(
+        self,
+        paths: list[str],
+        *,
+        play_first: bool,
+        replace: bool = False,
+    ) -> None:
+        files: list[Path] = []
+        for value in paths:
+            path = Path(value).expanduser().resolve()
+            if path.is_file():
+                files.append(path)
+            elif path.is_dir():
+                files.extend(
+                    sorted(
+                        (
+                            child
+                            for child in path.iterdir()
+                            if child.is_file() and child.suffix.lower() in self.MEDIA_EXTENSIONS
+                        ),
+                        key=lambda child: child.name.casefold(),
+                    )
                 )
+        if replace and files:
+            self._playlist_controller.clear()
+        first_added = self._playlist_controller.add_files(files)
+        if files:
+            self._settings.set_last_directory(str(files[0].parent))
+        if files and play_first:
+            self._playlist_controller.request_play(
+                self._playlist_controller.index_for_path(files[0])
+            )
+        elif first_added >= 0:
+            self.statusBar().showMessage(f"{len(files)}件をプレイリストへ追加しました。", 3000)
 
     def _create_menu(self) -> None:
         file_menu = self.menuBar().addMenu("ファイル")
@@ -189,12 +315,29 @@ class MainWindow(QMainWindow):
         open_action.triggered.connect(self.open_file)
         file_menu.addAction(open_action)
 
+        add_files_action = QAction("複数ファイルを追加", self)
+        add_files_action.setShortcut(QKeySequence("Ctrl+Shift+O"))
+        add_files_action.triggered.connect(self.add_files)
+        file_menu.addAction(add_files_action)
+
+        add_folder_action = QAction("フォルダを追加", self)
+        add_folder_action.triggered.connect(self.add_folder)
+        file_menu.addAction(add_folder_action)
+
         file_menu.addSeparator()
         exit_action = QAction("終了", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
         view_menu = self.menuBar().addMenu("表示")
+        self.playlist_action = QAction("プレイリスト", self)
+        self.playlist_action.setCheckable(True)
+        self.playlist_action.setChecked(True)
+        self.playlist_action.setShortcut(QKeySequence("Ctrl+L"))
+        self.playlist_action.triggered.connect(self._set_playlist_visible)
+        view_menu.addAction(self.playlist_action)
+        view_menu.addSeparator()
+
         self.frame_inspection_action = QAction("フレーム確認モード", self)
         self.frame_inspection_action.setCheckable(True)
         self.frame_inspection_action.setEnabled(False)
@@ -215,8 +358,10 @@ class MainWindow(QMainWindow):
 
     def _connect_signals(self) -> None:
         controls = self.control_bar
+        controls.previous_requested.connect(self._play_previous)
         controls.play_pause_requested.connect(self._controller.toggle_play_pause)
         controls.stop_requested.connect(self._controller.stop)
+        controls.next_requested.connect(self._play_next)
         controls.frame_back_requested.connect(lambda: self._frame_controller.request_step(-1))
         controls.frame_forward_requested.connect(lambda: self._frame_controller.request_step(1))
         controls.seek_requested.connect(self._controller.seek_absolute)
@@ -235,16 +380,42 @@ class MainWindow(QMainWindow):
             lambda steps: self._controller.adjust_speed(steps * 0.05)
         )
 
+        self.playlist_panel.add_files_requested.connect(self.add_files)
+        self.playlist_panel.add_folder_requested.connect(self.add_folder)
+        self.playlist_panel.remove_requested.connect(self._playlist_controller.remove_indices)
+        self.playlist_panel.clear_requested.connect(self._playlist_controller.clear)
+        self.playlist_panel.play_requested.connect(self._playlist_controller.request_play)
+        self.playlist_panel.order_changed.connect(self._playlist_controller.reorder)
+        self.playlist_panel.files_dropped.connect(self._append_playlist_from_drop)
+        self._playlist_controller.play_requested.connect(self._load_file)
+        self._playlist_controller.playlist_changed.connect(self.playlist_panel.set_entries)
+        self._playlist_controller.playlist_changed.connect(self._probe_playlist_metadata)
+        self._playlist_controller.current_index_changed.connect(
+            self.playlist_panel.set_current_index
+        )
+        self._playlist_controller.current_item_removed.connect(
+            self._on_current_playlist_item_removed
+        )
+        self._playlist_controller.cleared.connect(self._reset_media_view)
+        self._playlist_metadata_probe.duration_ready.connect(
+            self._playlist_controller.update_duration
+        )
+
         self._controller.position_changed.connect(controls.set_position)
-        self._controller.playback_changed.connect(controls.set_playing)
+        self._controller.position_changed.connect(
+            lambda _position, duration: self._playlist_controller.update_current_duration(duration)
+        )
         self._controller.playback_changed.connect(self._on_playback_changed)
+        self._controller.state_changed.connect(self._sync_playback_icon)
         self._controller.volume_changed.connect(controls.set_volume)
         self._controller.speed_changed.connect(controls.set_speed)
         self._controller.file_changed.connect(self._media_probe.probe)
+        self._controller.file_changed.connect(self._playlist_controller.set_current_path)
         self._controller.file_changed.connect(
             lambda _path: self.frame_inspection_action.setEnabled(True)
         )
         self._controller.error_occurred.connect(self._show_error)
+        self._controller.media_ended.connect(self._on_media_ended)
         self._frame_controller.inspection_mode_changed.connect(controls.set_frame_inspection)
         self._frame_controller.inspection_mode_changed.connect(
             self.frame_inspection_action.setChecked
@@ -271,6 +442,8 @@ class MainWindow(QMainWindow):
             ("[", lambda: self._controller.adjust_speed(-0.05)),
             ("]", lambda: self._controller.adjust_speed(0.05)),
             ("Backspace", lambda: self._controller.set_speed(1.0)),
+            ("PageUp", self._play_previous),
+            ("PageDown", self._play_next),
             ("Escape", self._handle_escape),
         )
         for key, callback in bindings:
@@ -278,6 +451,37 @@ class MainWindow(QMainWindow):
             shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
             shortcut.activated.connect(callback)
             self._shortcuts.append(shortcut)
+
+    def _play_previous(self) -> None:
+        if not self._playlist_controller.play_previous():
+            self.statusBar().showMessage("前のファイルはありません。", 2000)
+
+    def _play_next(self) -> None:
+        if not self._playlist_controller.play_next():
+            self.statusBar().showMessage("プレイリストの末尾です。", 2000)
+
+    def _on_media_ended(self, _path: str) -> None:
+        if self._playlist_controller.play_next():
+            return
+        if self._playlist_controller.entries:
+            self._playlist_controller.request_play(0)
+            self._controller.stop()
+            self.statusBar().showMessage("プレイリストの再生が終了しました。", 3000)
+
+    def _sync_playback_icon(self, state: PlaybackState) -> None:
+        self.control_bar.set_playing(state is PlaybackState.PLAYING)
+
+    def _on_current_playlist_item_removed(self, replacement_path: str) -> None:
+        self._load_file(replacement_path)
+        self._controller.stop()
+
+    def _reset_media_view(self) -> None:
+        if not self._controller.clear_media():
+            return
+        self.video_widget.set_media_loaded(False)
+        self.frame_inspection_action.setEnabled(False)
+        self.setWindowTitle("MediaCraft")
+        self.statusBar().showMessage("ファイルを開くか、動画をドロップしてください。")
 
     def _seek_or_step(self, frame_count: int, seconds: float) -> None:
         if self._frame_controller.inspection_mode:
@@ -302,16 +506,31 @@ class MainWindow(QMainWindow):
         variable_rate = variable if isinstance(variable, bool) else None
         self._frame_controller.set_frame_rate_analysis(fps, variable_rate)
 
+    def _probe_playlist_metadata(self, entries: object) -> None:
+        self._playlist_metadata_probe.probe(
+            [str(entry.path) for entry in entries if entry.duration is None]
+        )
+
+    def _set_playlist_visible(self, visible: bool) -> None:
+        self.playlist_panel.setVisible(visible)
+        self.playlist_action.setChecked(visible)
+
     def _restore_settings(self) -> None:
         geometry = self._settings.window_geometry()
         if not geometry.isEmpty():
             self.restoreGeometry(geometry)
+        state = self._settings.playlist_splitter_state()
+        if not state.isEmpty():
+            self._content_splitter.restoreState(state)
+        self._set_playlist_visible(self._settings.playlist_visible())
         self._controller.set_volume(self._settings.volume())
         self._controller.set_mute(self._settings.muted())
         self._controller.set_speed(self._settings.speed())
 
     def _save_settings(self) -> None:
         self._settings.set_window_geometry(self.saveGeometry())
+        self._settings.set_playlist_splitter_state(self._content_splitter.saveState())
+        self._settings.set_playlist_visible(self.playlist_action.isChecked())
         self._settings.set_volume(self._controller.volume)
         self._settings.set_muted(self._controller.muted)
         self._settings.set_speed(self._controller.speed)

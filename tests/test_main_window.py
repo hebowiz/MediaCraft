@@ -3,6 +3,7 @@ from PySide6.QtCore import QPointF, QEvent, Qt
 from PySide6.QtGui import QKeySequence, QMouseEvent
 from PySide6.QtWidgets import QApplication
 
+from mediacraft.player.playback_state import PlaybackState
 from mediacraft.ui.main_window import MainWindow
 
 
@@ -18,6 +19,8 @@ def test_window_initializes_backend_and_controls(qtbot) -> None:
     assert window.control_bar.play_button.text() == ""
     assert window.control_bar.play_button.accessibleName() == "再生"
     assert window.video_widget.isVisible()
+    assert window.playlist_panel.window() is window
+    assert not window.playlist_panel.isWindow()
     assert window.frame_inspection_action.text() == "フレーム確認モード"
     assert window.frame_inspection_action.shortcut() == QKeySequence("I")
     assert not window.frame_inspection_action.isEnabled()
@@ -36,6 +39,7 @@ def test_fullscreen_uses_mouse_activated_overlay(qtbot, tmp_path) -> None:
     media_file = tmp_path / "sample.mp4"
     media_file.touch()
     window._load_file(str(media_file))
+    window._set_playlist_visible(True)
     button_size = window.control_bar.fullscreen_button.size()
 
     window.toggle_fullscreen()
@@ -44,6 +48,7 @@ def test_fullscreen_uses_mouse_activated_overlay(qtbot, tmp_path) -> None:
 
     assert not window.menuBar().isVisible()
     assert not window.statusBar().isVisible()
+    assert not window.playlist_panel.isVisible()
     assert window.control_bar.parentWidget() is window._fullscreen_overlay
     assert window.control_bar.fullscreen_button.size() == button_size
     assert window._fullscreen_overlay.width() == window.width()
@@ -68,6 +73,7 @@ def test_fullscreen_uses_mouse_activated_overlay(qtbot, tmp_path) -> None:
     qtbot.waitUntil(lambda: not window.isFullScreen())
     assert window.menuBar().isVisible()
     assert window.statusBar().isVisible()
+    assert window.playlist_panel.isVisible()
     assert window.control_bar.parentWidget() is window.centralWidget()
 
 
@@ -90,3 +96,219 @@ def test_frame_inspection_menu_action_tracks_mode(qtbot, tmp_path) -> None:
 
     window._frame_controller.set_inspection_mode(False)
     assert not window.frame_inspection_action.isChecked()
+
+
+def test_playlist_loads_multiple_files_and_advances_on_end(qtbot, tmp_path) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    first = tmp_path / "first.mp4"
+    second = tmp_path / "second.mp4"
+    first.touch()
+    second.touch()
+
+    window._add_paths([str(first), str(second)], play_first=True)
+    assert len(window._playlist_controller.entries) == 2
+    assert backend.loaded_path == first.resolve()
+    assert window._playlist_controller.current_index == 0
+
+    backend.ended = True
+    window._controller.refresh()
+
+    assert backend.loaded_path == second.resolve()
+    assert window._playlist_controller.current_index == 1
+
+
+def test_folder_addition_uses_only_direct_media_files(qtbot, tmp_path) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    (tmp_path / "b.mkv").touch()
+    (tmp_path / "a.mp4").touch()
+    (tmp_path / "notes.txt").touch()
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    (nested / "hidden.mp4").touch()
+
+    window._add_paths([str(tmp_path)], play_first=False)
+
+    assert [entry.path.name for entry in window._playlist_controller.entries] == [
+        "a.mp4",
+        "b.mkv",
+    ]
+
+
+def test_unreadable_playlist_item_is_skipped(qtbot, tmp_path) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    broken = tmp_path / "broken.mp4"
+    valid = tmp_path / "valid.mp4"
+    broken.touch()
+    valid.touch()
+    backend.fail_load_paths.add(broken.resolve())
+
+    window._add_paths([str(broken), str(valid)], play_first=True)
+
+    qtbot.waitUntil(lambda: backend.loaded_path == valid.resolve())
+    assert window._playlist_controller.current_index == 1
+
+
+def test_playlist_item_can_be_selected_and_double_clicked(qtbot, tmp_path) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    first = tmp_path / "first.mp4"
+    second = tmp_path / "second.mp4"
+    first.touch()
+    second.touch()
+    window._add_paths([str(first), str(second)], play_first=False)
+    window._set_playlist_visible(True)
+    qtbot.wait(200)
+
+    item = window.playlist_panel.list_widget.item(1)
+    position = window.playlist_panel.list_widget.visualItemRect(item).center()
+    qtbot.mouseClick(
+        window.playlist_panel.list_widget.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=position,
+    )
+    assert item.isSelected()
+
+    qtbot.mouseDClick(
+        window.playlist_panel.list_widget.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=position,
+    )
+    assert backend.loaded_path == second.resolve()
+
+
+def test_selected_playlist_item_can_be_removed(qtbot, tmp_path) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    first = tmp_path / "first.mp4"
+    second = tmp_path / "second.mp4"
+    first.touch()
+    second.touch()
+    window._add_paths([str(first), str(second)], play_first=False)
+    window._set_playlist_visible(True)
+    qtbot.wait(200)
+
+    item = window.playlist_panel.list_widget.item(0)
+    position = window.playlist_panel.list_widget.visualItemRect(item).center()
+    qtbot.mouseClick(
+        window.playlist_panel.list_widget.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=position,
+    )
+    qtbot.mouseClick(window.playlist_panel.remove_button, Qt.MouseButton.LeftButton)
+
+    assert [entry.path for entry in window._playlist_controller.entries] == [
+        second.resolve()
+    ]
+
+
+def test_drop_target_controls_append_or_replace_behavior(qtbot, tmp_path) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    first = tmp_path / "first.mp4"
+    appended = tmp_path / "appended.mp4"
+    replacement = tmp_path / "replacement.mp4"
+    first.touch()
+    appended.touch()
+    replacement.touch()
+    window._add_paths([str(first)], play_first=True)
+
+    window._append_playlist_from_drop([str(appended)])
+    assert [entry.path for entry in window._playlist_controller.entries] == [
+        first.resolve(),
+        appended.resolve(),
+    ]
+    assert backend.loaded_path == first.resolve()
+
+    window._replace_playlist_from_drop([str(replacement)])
+    assert [entry.path for entry in window._playlist_controller.entries] == [
+        replacement.resolve()
+    ]
+    assert backend.loaded_path == replacement.resolve()
+
+
+def test_playlist_end_selects_first_item_and_stops(qtbot, tmp_path) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    first = tmp_path / "first.mp4"
+    second = tmp_path / "second.mp4"
+    first.touch()
+    second.touch()
+    window._add_paths([str(first), str(second)], play_first=True)
+    window._play_next()
+
+    backend.ended = True
+    window._controller.refresh()
+
+    assert backend.loaded_path == first.resolve()
+    assert backend.paused
+    assert window._controller.state is PlaybackState.STOPPED
+    assert window._playlist_controller.current_index == 0
+    assert window.playlist_panel.list_widget.currentRow() == 0
+    assert window.control_bar.play_button.accessibleName() == "再生"
+
+
+def test_removing_playing_item_loads_remaining_item_and_stops(qtbot, tmp_path) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    first = tmp_path / "first.mp4"
+    second = tmp_path / "second.mp4"
+    first.touch()
+    second.touch()
+    window._add_paths([str(first), str(second)], play_first=True)
+
+    window._playlist_controller.remove_indices([0])
+
+    assert backend.loaded_path == second.resolve()
+    assert backend.paused
+    assert window._controller.state is PlaybackState.STOPPED
+    assert window._playlist_controller.current_index == 0
+    assert window.playlist_panel.list_widget.currentRow() == 0
+    assert window.control_bar.play_button.accessibleName() == "再生"
+
+
+def test_clearing_playlist_restores_initial_player_view(qtbot, tmp_path) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    media_file = tmp_path / "sample.mp4"
+    media_file.touch()
+    window._add_paths([str(media_file)], play_first=True)
+
+    window._playlist_controller.clear()
+
+    assert backend.clear_called
+    assert backend.loaded_path is None
+    assert window._controller.current_file is None
+    assert window._controller.state is PlaybackState.NO_MEDIA
+    assert window.windowTitle() == "MediaCraft"
+    assert window.video_widget._placeholder.isVisible()
+    assert window.control_bar.play_button.accessibleName() == "再生"

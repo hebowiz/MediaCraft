@@ -30,6 +30,7 @@ class ProbeTask(QRunnable):
 
     def __init__(self, path: str) -> None:
         super().__init__()
+        self.setAutoDelete(False)
         self.path = path
         self.signals = ProbeSignals()
 
