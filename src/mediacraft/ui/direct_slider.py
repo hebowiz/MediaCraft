@@ -91,10 +91,12 @@ class DirectSlider(QSlider):
             track_color = QColor("#3a3f49")
             progress_color = QColor("#477eae")
             handle_color = QColor("#6ca6dc")
+            handle_outline_color = QColor("#f4f7fb")
             if not self.isEnabled():
                 track_color.setAlpha(115)
                 progress_color.setAlpha(115)
                 handle_color.setAlpha(115)
+                handle_outline_color.setAlpha(115)
 
             track_pen = QPen(track_color, max(1, groove.height()))
             track_pen.setCapStyle(Qt.PenCapStyle.FlatCap)
@@ -110,6 +112,7 @@ class DirectSlider(QSlider):
                 painter.drawLine(track_left, track_y, position_x, track_y)
         else:
             handle_color = QColor("#6ca6dc")
+            handle_outline_color = QColor("#f4f7fb")
 
         start_x = (
             self._point_x(self._ab_start, groove, handle.width(), option.upsideDown)
@@ -137,7 +140,7 @@ class DirectSlider(QSlider):
             )
             handle_center_y = handle.y() + handle.height() / 2
             handle_diameter = 9.0
-            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setPen(QPen(handle_outline_color, 1.25))
             painter.setBrush(handle_color)
             painter.drawEllipse(
                 QRectF(

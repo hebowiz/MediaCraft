@@ -113,6 +113,7 @@ def test_ab_overlay_keeps_handle_and_point_markers_visible(qtbot) -> None:
     }
 
     assert (108, 166, 220) in colors  # 再生位置ハンドル
+    assert any(red > 180 and green > 200 and blue > 220 for red, green, blue in colors)
     assert (97, 210, 135) in colors  # A点
     assert (242, 166, 90) in colors  # B点
 
