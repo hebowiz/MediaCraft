@@ -6,6 +6,8 @@ from PySide6.QtGui import QAction, QCloseEvent, QKeySequence, QResizeEvent, QSho
 from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QVBoxLayout, QWidget
 
 from mediacraft.app.settings import AppSettings
+from mediacraft.frame.frame_controller import FrameController
+from mediacraft.frame.media_probe import MediaProbe
 from mediacraft.player.mpv_backend import MpvBackend
 from mediacraft.player.player_backend import PlayerBackend
 from mediacraft.player.player_controller import PlayerController
@@ -25,6 +27,8 @@ class MainWindow(QMainWindow):
 
         self._settings = AppSettings()
         self._controller = PlayerController(backend or MpvBackend(), self)
+        self._frame_controller = FrameController(self._controller, self)
+        self._media_probe = MediaProbe(self)
         self._player_initialized = False
         self._playback_active = False
         self._shortcuts: list[QShortcut] = []
@@ -68,6 +72,7 @@ class MainWindow(QMainWindow):
         self._overlay_hide_timer.stop()
         self._fullscreen_overlay.hide()
         self._save_settings()
+        self._media_probe.shutdown()
         self._controller.shutdown()
         event.accept()
 
@@ -190,6 +195,19 @@ class MainWindow(QMainWindow):
         file_menu.addAction(exit_action)
 
         view_menu = self.menuBar().addMenu("表示")
+        self.frame_inspection_action = QAction("フレーム確認モード", self)
+        self.frame_inspection_action.setCheckable(True)
+        self.frame_inspection_action.setEnabled(False)
+        self.frame_inspection_action.setShortcut(QKeySequence("I"))
+        self.frame_inspection_action.setShortcutContext(
+            Qt.ShortcutContext.ApplicationShortcut
+        )
+        self.frame_inspection_action.triggered.connect(
+            self._frame_controller.set_inspection_mode
+        )
+        view_menu.addAction(self.frame_inspection_action)
+        view_menu.addSeparator()
+
         fullscreen_action = QAction("フルスクリーン", self)
         fullscreen_action.setShortcut(QKeySequence("F"))
         fullscreen_action.triggered.connect(self.toggle_fullscreen)
@@ -199,6 +217,9 @@ class MainWindow(QMainWindow):
         controls = self.control_bar
         controls.play_pause_requested.connect(self._controller.toggle_play_pause)
         controls.stop_requested.connect(self._controller.stop)
+        controls.frame_back_requested.connect(lambda: self._frame_controller.request_step(-1))
+        controls.frame_forward_requested.connect(lambda: self._frame_controller.request_step(1))
+        controls.frame_mode_requested.connect(self._frame_controller.toggle_inspection_mode)
         controls.seek_requested.connect(self._controller.seek_absolute)
         controls.volume_requested.connect(self._controller.set_volume)
         controls.mute_requested.connect(self._controller.toggle_mute)
@@ -220,30 +241,67 @@ class MainWindow(QMainWindow):
         self._controller.playback_changed.connect(self._on_playback_changed)
         self._controller.volume_changed.connect(controls.set_volume)
         self._controller.speed_changed.connect(controls.set_speed)
+        self._controller.file_changed.connect(self._media_probe.probe)
+        self._controller.file_changed.connect(
+            lambda _path: self.frame_inspection_action.setEnabled(True)
+        )
         self._controller.error_occurred.connect(self._show_error)
+        self._frame_controller.inspection_mode_changed.connect(controls.set_frame_inspection)
+        self._frame_controller.inspection_mode_changed.connect(
+            self.frame_inspection_action.setChecked
+        )
+        self._frame_controller.frame_display_changed.connect(controls.set_frame_info)
+        self._media_probe.analysis_ready.connect(self._on_media_analysis)
 
     def _create_shortcuts(self) -> None:
         bindings = (
             ("Space", self._controller.toggle_play_pause),
             ("Return", self._controller.toggle_play_pause),
             ("S", self._controller.stop),
-            ("Left", lambda: self._controller.seek_relative(-5)),
-            ("Right", lambda: self._controller.seek_relative(5)),
-            ("Shift+Left", lambda: self._controller.seek_relative(-30)),
-            ("Shift+Right", lambda: self._controller.seek_relative(30)),
+            ("Left", lambda: self._seek_or_step(-1, -5)),
+            ("Right", lambda: self._seek_or_step(1, 5)),
+            ("Shift+Left", lambda: self._seek_or_step(-10, -30)),
+            ("Shift+Right", lambda: self._seek_or_step(10, 30)),
+            ("Ctrl+Left", lambda: self._inspection_step(-100)),
+            ("Ctrl+Right", lambda: self._inspection_step(100)),
+            (",", lambda: self._frame_controller.request_step(-1)),
+            (".", lambda: self._frame_controller.request_step(1)),
             ("M", self._controller.toggle_mute),
             ("Up", lambda: self._controller.adjust_volume(5)),
             ("Down", lambda: self._controller.adjust_volume(-5)),
             ("[", lambda: self._controller.adjust_speed(-0.05)),
             ("]", lambda: self._controller.adjust_speed(0.05)),
             ("Backspace", lambda: self._controller.set_speed(1.0)),
-            ("Escape", self.leave_fullscreen),
+            ("Escape", self._handle_escape),
         )
         for key, callback in bindings:
             shortcut = QShortcut(QKeySequence(key), self)
             shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
             shortcut.activated.connect(callback)
             self._shortcuts.append(shortcut)
+
+    def _seek_or_step(self, frame_count: int, seconds: float) -> None:
+        if self._frame_controller.inspection_mode:
+            self._frame_controller.request_step(frame_count)
+        else:
+            self._controller.seek_relative(seconds)
+
+    def _inspection_step(self, frame_count: int) -> None:
+        if self._frame_controller.inspection_mode:
+            self._frame_controller.request_step(frame_count)
+
+    def _handle_escape(self) -> None:
+        if self._frame_controller.inspection_mode:
+            self._frame_controller.set_inspection_mode(False)
+        else:
+            self.leave_fullscreen()
+
+    def _on_media_analysis(self, path: str, fps: float, variable: object) -> None:
+        current_file = self._controller.current_file
+        if current_file is None or Path(path).resolve() != current_file:
+            return
+        variable_rate = variable if isinstance(variable, bool) else None
+        self._frame_controller.set_frame_rate_analysis(fps, variable_rate)
 
     def _restore_settings(self) -> None:
         geometry = self._settings.window_geometry()

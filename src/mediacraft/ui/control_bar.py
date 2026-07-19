@@ -11,12 +11,15 @@ from PySide6.QtWidgets import (
 )
 
 from mediacraft.ui.direct_slider import DirectSlider
-from mediacraft.utils.time_format import format_time
+from mediacraft.utils.time_format import format_time, format_time_millis
 
 
 class ControlBar(QWidget):
     play_pause_requested = Signal()
     stop_requested = Signal()
+    frame_back_requested = Signal()
+    frame_forward_requested = Signal()
+    frame_mode_requested = Signal()
     seek_requested = Signal(float)
     volume_requested = Signal(int)
     mute_requested = Signal()
@@ -29,6 +32,7 @@ class ControlBar(QWidget):
         super().__init__(parent)
         self._duration = 0.0
         self._seeking = False
+        self._frame_inspection = False
         self._white_icon_cache: dict[QStyle.StandardPixmap, QIcon] = {}
 
         self.seek_slider = DirectSlider(Qt.Orientation.Horizontal)
@@ -39,7 +43,12 @@ class ControlBar(QWidget):
 
         self.play_button = QPushButton()
         self.stop_button = QPushButton()
+        self.frame_back_button = QPushButton()
+        self.frame_forward_button = QPushButton()
+        self.frame_mode_button = QPushButton()
+        self.frame_mode_button.setCheckable(True)
         self.time_label = QLabel("00:00:00 / 00:00:00")
+        self.frame_label = QLabel("Frame: --")
 
         self.speed_combo = QComboBox()
         self.speed_combo.setEditable(True)
@@ -67,6 +76,21 @@ class ControlBar(QWidget):
             "停止",
         )
         self._configure_icon_button(
+            self.frame_back_button,
+            QStyle.StandardPixmap.SP_MediaSkipBackward,
+            "1フレーム戻る",
+        )
+        self._configure_icon_button(
+            self.frame_forward_button,
+            QStyle.StandardPixmap.SP_MediaSkipForward,
+            "1フレーム進む",
+        )
+        self._configure_icon_button(
+            self.frame_mode_button,
+            QStyle.StandardPixmap.SP_FileDialogDetailedView,
+            "フレーム検査モード",
+        )
+        self._configure_icon_button(
             self.mute_button,
             QStyle.StandardPixmap.SP_MediaVolume,
             "ミュート",
@@ -80,7 +104,11 @@ class ControlBar(QWidget):
         row = QHBoxLayout()
         row.addWidget(self.play_button)
         row.addWidget(self.stop_button)
+        row.addWidget(self.frame_back_button)
+        row.addWidget(self.frame_forward_button)
+        row.addWidget(self.frame_mode_button)
         row.addWidget(self.time_label)
+        row.addWidget(self.frame_label)
         row.addStretch(1)
         row.addWidget(self.speed_combo)
         row.addWidget(self.mute_button)
@@ -95,6 +123,9 @@ class ControlBar(QWidget):
 
         self.play_button.clicked.connect(self.play_pause_requested.emit)
         self.stop_button.clicked.connect(self.stop_requested.emit)
+        self.frame_back_button.clicked.connect(self.frame_back_requested.emit)
+        self.frame_forward_button.clicked.connect(self.frame_forward_requested.emit)
+        self.frame_mode_button.clicked.connect(self.frame_mode_requested.emit)
         self.volume_slider.valueChanged.connect(self.volume_requested.emit)
         self.mute_button.clicked.connect(self.mute_requested.emit)
         self.speed_combo.currentIndexChanged.connect(self._emit_speed)
@@ -106,7 +137,30 @@ class ControlBar(QWidget):
         if not self._seeking:
             value = int((position / duration) * self.seek_slider.maximum()) if duration else 0
             self.seek_slider.setValue(max(0, min(self.seek_slider.maximum(), value)))
-        self.time_label.setText(f"{format_time(position)} / {format_time(duration)}")
+        formatter = format_time_millis if self._frame_inspection else format_time
+        self.time_label.setText(f"{formatter(position)} / {formatter(duration)}")
+
+    def set_frame_info(self, frame_number: int, approximate: bool) -> None:
+        if frame_number < 0:
+            self.frame_label.setText("Frame: --")
+            return
+        prefix = "~" if approximate else ""
+        self.frame_label.setText(f"Frame: {prefix}{frame_number:,}")
+
+    def set_frame_inspection(self, enabled: bool) -> None:
+        self._frame_inspection = enabled
+        self.frame_mode_button.setChecked(enabled)
+        self.frame_mode_button.setToolTip(
+            "フレーム検査モードを終了" if enabled else "フレーム検査モード"
+        )
+        self.frame_label.setStyleSheet("font-weight: 700;" if enabled else "")
+        for widget in (
+            self.speed_combo,
+            self.mute_button,
+            self.volume_slider,
+            self.volume_label,
+        ):
+            widget.setVisible(not enabled)
 
     def set_playing(self, playing: bool) -> None:
         icon = QStyle.StandardPixmap.SP_MediaPause if playing else QStyle.StandardPixmap.SP_MediaPlay

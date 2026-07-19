@@ -56,3 +56,24 @@ def test_missing_file_emits_error(qtbot, tmp_path) -> None:
     assert result is False
     assert controller.state is PlaybackState.ERROR
     assert "ファイルが見つかりません" in blocker.args[0]
+
+
+def test_frame_step_pauses_playback_and_moves_requested_frames(qtbot, tmp_path) -> None:
+    from conftest import FakeBackend
+
+    backend = FakeBackend()
+    controller = PlayerController(backend)
+    media_file = tmp_path / "sample.mp4"
+    media_file.touch()
+    controller.initialize(123)
+    controller.load_file(media_file)
+
+    assert controller.frame_step(1)
+    assert backend.paused
+    assert backend.frame_steps == [1]
+    assert controller.state is PlaybackState.PAUSED
+
+    assert controller.set_frame_inspection(True)
+    assert controller.frame_step(-10)
+    assert backend.frame_steps == [1, -10]
+    assert controller.state is PlaybackState.FRAME_INSPECTION

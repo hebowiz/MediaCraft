@@ -23,6 +23,9 @@ def test_buttons_use_fixed_size_icons(qtbot) -> None:
     buttons = (
         controls.play_button,
         controls.stop_button,
+        controls.frame_back_button,
+        controls.frame_forward_button,
+        controls.frame_mode_button,
         controls.mute_button,
         controls.fullscreen_button,
     )
@@ -40,6 +43,26 @@ def test_buttons_use_fixed_size_icons(qtbot) -> None:
     assert "速度" not in {label.text() for label in controls.findChildren(QLabel)}
     for button in buttons:
         assert_icon_is_white(button)
+
+
+def test_frame_inspection_shows_precision_and_simplifies_controls(qtbot) -> None:
+    controls = ControlBar()
+    qtbot.addWidget(controls)
+    controls.show()
+
+    controls.set_frame_info(1234, True)
+    controls.set_frame_inspection(True)
+    controls.set_position(1.234, 10.0)
+
+    assert controls.frame_label.text() == "Frame: ~1,234"
+    assert controls.time_label.text() == "00:00:01.234 / 00:00:10.000"
+    assert controls.frame_mode_button.isChecked()
+    assert not controls.speed_combo.isVisible()
+    assert not controls.volume_slider.isVisible()
+
+    controls.set_frame_inspection(False)
+    controls.set_position(1.234, 10.0)
+    assert controls.time_label.text() == "00:00:01 / 00:00:10"
 
 
 def test_volume_click_jumps_to_pointer(qtbot) -> None:

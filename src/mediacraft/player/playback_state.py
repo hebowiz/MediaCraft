@@ -7,6 +7,7 @@ class PlaybackState(Enum):
     READY = auto()
     PLAYING = auto()
     PAUSED = auto()
+    FRAME_INSPECTION = auto()
     SEEKING = auto()
     STOPPED = auto()
     ENDED = auto()

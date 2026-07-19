@@ -13,6 +13,8 @@ class FakeBackend(PlayerBackend):
         self.volume = 100
         self.muted = False
         self.speed = 1.0
+        self.fps = 30.0
+        self.frame_steps: list[int] = []
         self.shutdown_called = False
 
     def initialize(self, window_id: int) -> None:
@@ -47,6 +49,11 @@ class FakeBackend(PlayerBackend):
     def set_mute(self, muted: bool) -> None:
         self.muted = muted
 
+    def frame_step(self, count: int) -> None:
+        self.paused = True
+        self.frame_steps.append(count)
+        self.current_position = max(0.0, self.current_position + count / self.fps)
+
     def position(self) -> float:
         return self.current_position
 
@@ -55,6 +62,12 @@ class FakeBackend(PlayerBackend):
 
     def is_paused(self) -> bool:
         return self.paused
+
+    def estimated_frame_number(self) -> int | None:
+        return round(self.current_position * self.fps)
+
+    def frame_rate(self) -> float:
+        return self.fps
 
     def shutdown(self) -> None:
         self.shutdown_called = True

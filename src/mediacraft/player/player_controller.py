@@ -15,6 +15,7 @@ class PlayerController(QObject):
     playback_changed = Signal(bool)
     volume_changed = Signal(int, bool)
     speed_changed = Signal(float)
+    frame_metrics_changed = Signal(int, float)
     file_changed = Signal(str)
     error_occurred = Signal(str)
 
@@ -27,6 +28,7 @@ class PlayerController(QObject):
         self._volume = 100
         self._muted = False
         self._speed = 1.0
+        self._frame_inspection = False
 
         self._timer = QTimer(self)
         self._timer.setInterval(100)
@@ -51,6 +53,10 @@ class PlayerController(QObject):
     @property
     def speed(self) -> float:
         return self._speed
+
+    @property
+    def frame_inspection(self) -> bool:
+        return self._frame_inspection
 
     def initialize(self, window_id: int) -> bool:
         if self._initialized:
@@ -84,6 +90,7 @@ class PlayerController(QObject):
             return False
 
         self._current_file = media_path
+        self._frame_inspection = False
         self.file_changed.emit(str(media_path))
         self._set_state(PlaybackState.PLAYING)
         self.playback_changed.emit(True)
@@ -94,6 +101,7 @@ class PlayerController(QObject):
             return
         try:
             if self._backend.is_paused():
+                self._frame_inspection = False
                 self._backend.play()
                 self._set_state(PlaybackState.PLAYING)
                 self.playback_changed.emit(True)
@@ -117,6 +125,7 @@ class PlayerController(QObject):
         except BackendError:
             duration = 0.0
         self.position_changed.emit(0.0, duration)
+        self._frame_inspection = False
         self.playback_changed.emit(False)
         self._set_state(PlaybackState.STOPPED)
 
@@ -175,6 +184,42 @@ class PlayerController(QObject):
     def adjust_speed(self, delta: float) -> None:
         self.set_speed(round(self._speed + delta, 2))
 
+    def set_frame_inspection(self, enabled: bool) -> bool:
+        if enabled and self._current_file is None:
+            return False
+        if enabled == self._frame_inspection:
+            return True
+        try:
+            if enabled and not self._backend.is_paused():
+                self._backend.pause()
+        except BackendError as exc:
+            self._fail(str(exc))
+            return False
+
+        self._frame_inspection = enabled
+        if enabled:
+            self.playback_changed.emit(False)
+            self._set_state(PlaybackState.FRAME_INSPECTION)
+        else:
+            self._set_state(PlaybackState.PAUSED)
+        return True
+
+    def frame_step(self, count: int) -> bool:
+        if self._current_file is None or count == 0:
+            return False
+        try:
+            if not self._backend.is_paused():
+                self._backend.pause()
+            self._backend.frame_step(count)
+        except BackendError as exc:
+            self._fail(str(exc))
+            return False
+
+        self.playback_changed.emit(False)
+        state = PlaybackState.FRAME_INSPECTION if self._frame_inspection else PlaybackState.PAUSED
+        self._set_state(state)
+        return True
+
     def refresh(self) -> None:
         if not self._initialized or self._current_file is None:
             return
@@ -182,12 +227,20 @@ class PlayerController(QObject):
             position = self._backend.position()
             duration = self._backend.duration()
             paused = self._backend.is_paused()
+            frame_number = self._backend.estimated_frame_number()
+            frame_rate = self._backend.frame_rate()
         except BackendError as exc:
             self._fail(str(exc))
             return
         self.position_changed.emit(position, duration)
+        if frame_number is None and frame_rate > 0:
+            frame_number = max(0, round(position * frame_rate))
+        self.frame_metrics_changed.emit(frame_number if frame_number is not None else -1, frame_rate)
         if self._state not in {PlaybackState.STOPPED, PlaybackState.ERROR}:
-            state = PlaybackState.PAUSED if paused else PlaybackState.PLAYING
+            if self._frame_inspection:
+                state = PlaybackState.FRAME_INSPECTION
+            else:
+                state = PlaybackState.PAUSED if paused else PlaybackState.PLAYING
             if state is not self._state:
                 self._set_state(state)
                 self.playback_changed.emit(not paused)

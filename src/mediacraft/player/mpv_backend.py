@@ -89,6 +89,15 @@ class MpvBackend(PlayerBackend):
     def set_mute(self, muted: bool) -> None:
         self._perform("ミュートを変更できませんでした", lambda player: setattr(player, "mute", muted))
 
+    def frame_step(self, count: int) -> None:
+        if count == 0:
+            return
+        mode = "mute" if count > 0 else "seek"
+        self._perform(
+            "フレームを移動できませんでした",
+            lambda player: player.command("frame-step", count, mode),
+        )
+
     def position(self) -> float:
         return self._number_property("time_pos")
 
@@ -101,6 +110,20 @@ class MpvBackend(PlayerBackend):
             return bool(player.pause)
         except Exception:
             return True
+
+    def estimated_frame_number(self) -> int | None:
+        player = self._require_player()
+        try:
+            value = player.estimated_frame_number
+            return max(0, int(value)) if value is not None else None
+        except Exception:
+            return None
+
+    def frame_rate(self) -> float:
+        container_fps = self._number_property("container_fps")
+        if container_fps > 0:
+            return container_fps
+        return self._number_property("estimated_vf_fps")
 
     def shutdown(self) -> None:
         if self._player is None:

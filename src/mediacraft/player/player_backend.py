@@ -52,6 +52,10 @@ class PlayerBackend(ABC):
         pass
 
     @abstractmethod
+    def frame_step(self, count: int) -> None:
+        pass
+
+    @abstractmethod
     def position(self) -> float:
         pass
 
@@ -61,6 +65,14 @@ class PlayerBackend(ABC):
 
     @abstractmethod
     def is_paused(self) -> bool:
+        pass
+
+    @abstractmethod
+    def estimated_frame_number(self) -> int | None:
+        pass
+
+    @abstractmethod
+    def frame_rate(self) -> float:
         pass
 
     @abstractmethod
