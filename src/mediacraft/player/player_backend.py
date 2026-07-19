@@ -56,6 +56,10 @@ class PlayerBackend(ABC):
         pass
 
     @abstractmethod
+    def set_ab_loop(self, start: float | None, end: float | None) -> None:
+        pass
+
+    @abstractmethod
     def frame_step(self, count: int) -> None:
         pass
 

@@ -312,3 +312,42 @@ def test_clearing_playlist_restores_initial_player_view(qtbot, tmp_path) -> None
     assert window.windowTitle() == "MediaCraft"
     assert window.video_widget._placeholder.isVisible()
     assert window.control_bar.play_button.accessibleName() == "再生"
+
+
+def test_ab_repeat_menu_controls_seek_bar_state(qtbot, tmp_path) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    media_file = tmp_path / "sample.mp4"
+    media_file.touch()
+    window._add_paths([str(media_file)], play_first=True)
+
+    window._controller.seek_absolute(10.0)
+    window.set_a_action.trigger()
+    window._controller.seek_absolute(25.0)
+    window.set_b_action.trigger()
+    window.ab_repeat_action.trigger()
+
+    assert backend.ab_loop == (10.0, 25.0)
+    assert window.ab_repeat_action.isChecked()
+    assert window.control_bar.seek_slider._ab_start == 10.0
+    assert window.control_bar.seek_slider._ab_end == 25.0
+    assert window.control_bar.seek_slider._ab_enabled is True
+
+
+def test_ab_repeat_action_returns_to_unchecked_without_points(qtbot, tmp_path) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    media_file = tmp_path / "sample.mp4"
+    media_file.touch()
+    window._add_paths([str(media_file)], play_first=True)
+
+    window.ab_repeat_action.trigger()
+
+    assert not window.ab_repeat_action.isChecked()
+    assert backend.ab_loop is None

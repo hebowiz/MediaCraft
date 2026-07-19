@@ -16,6 +16,7 @@ class PlayerController(QObject):
     volume_changed = Signal(int, bool)
     speed_changed = Signal(float)
     frame_metrics_changed = Signal(int, float)
+    manual_navigation_started = Signal()
     file_changed = Signal(str)
     media_ended = Signal(str)
     error_occurred = Signal(str)
@@ -29,6 +30,8 @@ class PlayerController(QObject):
         self._volume = 100
         self._muted = False
         self._speed = 1.0
+        self._position = 0.0
+        self._duration = 0.0
         self._frame_inspection = False
         self._end_reported = False
 
@@ -59,6 +62,14 @@ class PlayerController(QObject):
     @property
     def frame_inspection(self) -> bool:
         return self._frame_inspection
+
+    @property
+    def position(self) -> float:
+        return self._position
+
+    @property
+    def duration(self) -> float:
+        return self._duration
 
     def initialize(self, window_id: int) -> bool:
         if self._initialized:
@@ -92,6 +103,8 @@ class PlayerController(QObject):
             return False
 
         self._current_file = media_path
+        self._position = 0.0
+        self._duration = 0.0
         self._frame_inspection = False
         self._end_reported = False
         self.file_changed.emit(str(media_path))
@@ -130,7 +143,9 @@ class PlayerController(QObject):
             duration = self._backend.duration()
         except BackendError:
             duration = 0.0
-        self.position_changed.emit(0.0, duration)
+        self._position = 0.0
+        self._duration = duration
+        self.position_changed.emit(self._position, self._duration)
         self._frame_inspection = False
         self._end_reported = False
         self.playback_changed.emit(False)
@@ -144,6 +159,8 @@ class PlayerController(QObject):
                 self._fail(str(exc))
                 return False
         self._current_file = None
+        self._position = 0.0
+        self._duration = 0.0
         self._frame_inspection = False
         self._end_reported = False
         self.position_changed.emit(0.0, 0.0)
@@ -152,7 +169,7 @@ class PlayerController(QObject):
         self._set_state(PlaybackState.NO_MEDIA)
         return True
 
-    def seek_absolute(self, seconds: float) -> None:
+    def seek_absolute(self, seconds: float, *, user_initiated: bool = True) -> None:
         if self._current_file is None:
             return
         try:
@@ -160,6 +177,11 @@ class PlayerController(QObject):
             self._end_reported = False
         except BackendError as exc:
             self._fail(str(exc))
+            return
+        self._position = max(0.0, min(self._duration, seconds)) if self._duration > 0 else max(0.0, seconds)
+        if user_initiated:
+            self.manual_navigation_started.emit()
+        self.position_changed.emit(self._position, self._duration)
 
     def seek_relative(self, seconds: float) -> None:
         if self._current_file is None:
@@ -169,6 +191,11 @@ class PlayerController(QObject):
             self._end_reported = False
         except BackendError as exc:
             self._fail(str(exc))
+            return
+        upper = self._duration if self._duration > 0 else float("inf")
+        self._position = max(0.0, min(upper, self._position + seconds))
+        self.manual_navigation_started.emit()
+        self.position_changed.emit(self._position, self._duration)
 
     def set_volume(self, volume: int) -> None:
         self._volume = max(0, min(100, int(volume)))
@@ -195,6 +222,16 @@ class PlayerController(QObject):
 
     def toggle_mute(self) -> None:
         self.set_mute(not self._muted)
+
+    def set_ab_loop(self, start: float | None, end: float | None) -> bool:
+        if not self._initialized:
+            return False
+        try:
+            self._backend.set_ab_loop(start, end)
+        except BackendError as exc:
+            self._fail(str(exc))
+            return False
+        return True
 
     def set_speed(self, speed: float) -> None:
         self._speed = max(0.1, min(4.0, float(speed)))
@@ -240,6 +277,7 @@ class PlayerController(QObject):
             self._fail(str(exc))
             return False
 
+        self.manual_navigation_started.emit()
         self.playback_changed.emit(False)
         state = PlaybackState.FRAME_INSPECTION if self._frame_inspection else PlaybackState.PAUSED
         self._set_state(state)
@@ -258,6 +296,8 @@ class PlayerController(QObject):
         except BackendError as exc:
             self._fail(str(exc))
             return
+        self._position = position
+        self._duration = duration
         self.position_changed.emit(position, duration)
         if frame_number is None and frame_rate > 0:
             frame_number = max(0, round(position * frame_rate))

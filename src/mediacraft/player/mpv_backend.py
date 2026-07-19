@@ -95,6 +95,17 @@ class MpvBackend(PlayerBackend):
     def set_mute(self, muted: bool) -> None:
         self._perform("ミュートを変更できませんでした", lambda player: setattr(player, "mute", muted))
 
+    def set_ab_loop(self, start: float | None, end: float | None) -> None:
+        def update_loop(player: Any) -> None:
+            if start is None or end is None:
+                player.ab_loop_b = "no"
+                player.ab_loop_a = "no"
+                return
+            player.ab_loop_a = max(0.0, start)
+            player.ab_loop_b = max(0.0, end)
+
+        self._perform("A-Bリピートを変更できませんでした", update_loop)
+
     def frame_step(self, count: int) -> None:
         if count == 0:
             return

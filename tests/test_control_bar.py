@@ -1,5 +1,6 @@
 import pytest
 from PySide6.QtCore import QPoint, Qt
+from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QLabel
 
 from mediacraft.ui.control_bar import ControlBar
@@ -75,6 +76,45 @@ def test_cfr_frame_rate_is_displayed_as_fps(qtbot) -> None:
 
     controls.set_frame_info(-1, True, 0.0, None)
     assert controls.frame_label.text() == "Frame: -- | -- FPS"
+
+
+def test_ab_points_are_forwarded_to_seek_slider(qtbot) -> None:
+    controls = ControlBar()
+    qtbot.addWidget(controls)
+    controls.set_position(0.0, 100.0)
+
+    controls.set_ab_points(10.0, 30.0, True)
+
+    assert controls.seek_slider._ab_start == 10.0
+    assert controls.seek_slider._ab_end == 30.0
+    assert controls.seek_slider._ab_duration == 100.0
+    assert controls.seek_slider._ab_enabled is True
+    assert controls.seek_slider.toolTip() == (
+        "A: 00:00:10.000\nB: 00:00:30.000\nA-Bリピート中"
+    )
+
+
+def test_ab_overlay_keeps_handle_and_point_markers_visible(qtbot) -> None:
+    controls = ControlBar()
+    controls.resize(800, controls.sizeHint().height())
+    qtbot.addWidget(controls)
+    controls.show()
+    controls.set_position(20.0, 100.0)
+    controls.set_ab_points(10.0, 30.0, True)
+
+    slider = controls.seek_slider
+    image = QImage(slider.size(), QImage.Format.Format_ARGB32)
+    image.fill(Qt.GlobalColor.transparent)
+    slider.render(image)
+    colors = {
+        image.pixelColor(x, y).getRgb()[:3]
+        for y in range(image.height())
+        for x in range(image.width())
+    }
+
+    assert (108, 166, 220) in colors  # 再生位置ハンドル
+    assert (97, 210, 135) in colors  # A点
+    assert (242, 166, 90) in colors  # B点
 
 
 def test_volume_click_jumps_to_pointer(qtbot) -> None:

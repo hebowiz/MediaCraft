@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QTimer, Qt
+from PySide6.QtCore import QEvent, QObject, QSignalBlocker, QTimer, Qt
 from PySide6.QtGui import (
     QAction,
     QCloseEvent,
@@ -30,6 +30,7 @@ from mediacraft.player.player_controller import PlayerController
 from mediacraft.player.playback_state import PlaybackState
 from mediacraft.playlist.playlist_controller import PlaylistController
 from mediacraft.playlist.metadata_probe import PlaylistMetadataProbe
+from mediacraft.repeat.ab_repeat_controller import ABRepeatController
 from mediacraft.ui.control_bar import ControlBar
 from mediacraft.ui.fullscreen_overlay import FullscreenOverlay
 from mediacraft.ui.playlist_panel import PlaylistPanel
@@ -60,6 +61,7 @@ class MainWindow(QMainWindow):
         self._controller = PlayerController(backend or MpvBackend(), self)
         self._frame_controller = FrameController(self._controller, self)
         self._playlist_controller = PlaylistController(self)
+        self._ab_repeat_controller = ABRepeatController(self._controller, self)
         self._playlist_metadata_probe = PlaylistMetadataProbe(self)
         self._media_probe = MediaProbe(self)
         self._player_initialized = False
@@ -329,6 +331,58 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
+        playback_menu = self.menuBar().addMenu("再生")
+        self.set_a_action = QAction("A点を設定", self)
+        self.set_a_action.setShortcut(QKeySequence("A"))
+        self.set_a_action.triggered.connect(self._ab_repeat_controller.set_point_a)
+        playback_menu.addAction(self.set_a_action)
+
+        self.set_b_action = QAction("B点を設定", self)
+        self.set_b_action.setShortcut(QKeySequence("B"))
+        self.set_b_action.triggered.connect(self._ab_repeat_controller.set_point_b)
+        playback_menu.addAction(self.set_b_action)
+
+        self.ab_repeat_action = QAction("A-Bリピート", self)
+        self.ab_repeat_action.setCheckable(True)
+        self.ab_repeat_action.setShortcut(QKeySequence("R"))
+        self.ab_repeat_action.triggered.connect(self._ab_repeat_controller.set_enabled)
+        playback_menu.addAction(self.ab_repeat_action)
+
+        playback_menu.addSeparator()
+        self.seek_a_action = QAction("A点へ移動", self)
+        self.seek_a_action.setShortcut(QKeySequence("Shift+A"))
+        self.seek_a_action.triggered.connect(self._ab_repeat_controller.seek_to_a)
+        playback_menu.addAction(self.seek_a_action)
+
+        self.seek_b_action = QAction("B点へ移動", self)
+        self.seek_b_action.setShortcut(QKeySequence("Shift+B"))
+        self.seek_b_action.triggered.connect(self._ab_repeat_controller.seek_to_b)
+        playback_menu.addAction(self.seek_b_action)
+
+        playback_menu.addSeparator()
+        clear_a_action = QAction("A点を解除", self)
+        clear_a_action.triggered.connect(self._ab_repeat_controller.clear_point_a)
+        playback_menu.addAction(clear_a_action)
+        clear_b_action = QAction("B点を解除", self)
+        clear_b_action.triggered.connect(self._ab_repeat_controller.clear_point_b)
+        playback_menu.addAction(clear_b_action)
+        clear_ab_action = QAction("A-B設定をすべて解除", self)
+        clear_ab_action.triggered.connect(self._ab_repeat_controller.clear)
+        playback_menu.addAction(clear_ab_action)
+
+        self._ab_media_actions = (
+            self.set_a_action,
+            self.set_b_action,
+            self.ab_repeat_action,
+            self.seek_a_action,
+            self.seek_b_action,
+            clear_a_action,
+            clear_b_action,
+            clear_ab_action,
+        )
+        for action in self._ab_media_actions:
+            action.setEnabled(False)
+
         view_menu = self.menuBar().addMenu("表示")
         self.playlist_action = QAction("プレイリスト", self)
         self.playlist_action.setCheckable(True)
@@ -414,6 +468,9 @@ class MainWindow(QMainWindow):
         self._controller.file_changed.connect(
             lambda _path: self.frame_inspection_action.setEnabled(True)
         )
+        self._controller.file_changed.connect(
+            lambda _path: self._set_ab_actions_enabled(True)
+        )
         self._controller.error_occurred.connect(self._show_error)
         self._controller.media_ended.connect(self._on_media_ended)
         self._frame_controller.inspection_mode_changed.connect(controls.set_frame_inspection)
@@ -422,6 +479,10 @@ class MainWindow(QMainWindow):
         )
         self._frame_controller.frame_display_changed.connect(controls.set_frame_info)
         self._media_probe.analysis_ready.connect(self._on_media_analysis)
+        self._ab_repeat_controller.state_changed.connect(self._sync_ab_repeat_ui)
+        self._ab_repeat_controller.message.connect(
+            lambda message: self.statusBar().showMessage(message, 4000)
+        )
 
     def _create_shortcuts(self) -> None:
         bindings = (
@@ -470,6 +531,18 @@ class MainWindow(QMainWindow):
 
     def _sync_playback_icon(self, state: PlaybackState) -> None:
         self.control_bar.set_playing(state is PlaybackState.PLAYING)
+        if state is PlaybackState.NO_MEDIA:
+            self._set_ab_actions_enabled(False)
+
+    def _sync_ab_repeat_ui(self, start: float, end: float, enabled: bool) -> None:
+        self.control_bar.set_ab_points(start, end, enabled)
+        blocker = QSignalBlocker(self.ab_repeat_action)
+        self.ab_repeat_action.setChecked(enabled)
+        del blocker
+
+    def _set_ab_actions_enabled(self, enabled: bool) -> None:
+        for action in self._ab_media_actions:
+            action.setEnabled(enabled)
 
     def _on_current_playlist_item_removed(self, replacement_path: str) -> None:
         self._load_file(replacement_path)

@@ -34,6 +34,9 @@ class ControlBar(QWidget):
         self._duration = 0.0
         self._seeking = False
         self._frame_inspection = False
+        self._ab_start: float | None = None
+        self._ab_end: float | None = None
+        self._ab_enabled = False
         self._white_icon_cache: dict[QStyle.StandardPixmap, QIcon] = {}
 
         self.seek_slider = DirectSlider(Qt.Orientation.Horizontal)
@@ -147,6 +150,31 @@ class ControlBar(QWidget):
             self.seek_slider.setValue(max(0, min(self.seek_slider.maximum(), value)))
         formatter = format_time_millis if self._frame_inspection else format_time
         self.time_label.setText(f"{formatter(position)} / {formatter(duration)}")
+        self.seek_slider.set_ab_points(
+            self._ab_start,
+            self._ab_end,
+            duration,
+            self._ab_enabled,
+        )
+
+    def set_ab_points(self, start: float, end: float, enabled: bool) -> None:
+        self._ab_start = start if start >= 0 else None
+        self._ab_end = end if end >= 0 else None
+        self._ab_enabled = enabled
+        self.seek_slider.set_ab_points(
+            self._ab_start,
+            self._ab_end,
+            self._duration,
+            enabled,
+        )
+        details: list[str] = []
+        if self._ab_start is not None:
+            details.append(f"A: {format_time_millis(self._ab_start)}")
+        if self._ab_end is not None:
+            details.append(f"B: {format_time_millis(self._ab_end)}")
+        if enabled:
+            details.append("A-Bリピート中")
+        self.seek_slider.setToolTip("\n".join(details))
 
     def set_frame_info(
         self,
