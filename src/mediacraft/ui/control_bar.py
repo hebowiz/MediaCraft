@@ -40,6 +40,8 @@ class ControlBar(QWidget):
         self._white_icon_cache: dict[QStyle.StandardPixmap, QIcon] = {}
 
         self.seek_slider = DirectSlider(Qt.Orientation.Horizontal)
+        self.seek_slider.setObjectName("seekSlider")
+        self.seek_slider.set_centered_track(True)
         self.seek_slider.setRange(0, 10_000)
         self.seek_slider.setEnabled(False)
         self.seek_slider.interaction_started.connect(self._on_seek_started)

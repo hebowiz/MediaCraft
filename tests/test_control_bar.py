@@ -1,7 +1,7 @@
 import pytest
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QLabel, QStyle, QStyleOptionSlider
 
 from mediacraft.ui.control_bar import ControlBar
 
@@ -115,6 +115,63 @@ def test_ab_overlay_keeps_handle_and_point_markers_visible(qtbot) -> None:
     assert (108, 166, 220) in colors  # 再生位置ハンドル
     assert (97, 210, 135) in colors  # A点
     assert (242, 166, 90) in colors  # B点
+
+    option = QStyleOptionSlider()
+    slider.initStyleOption(option)
+    groove = slider.style().subControlRect(
+        QStyle.ComplexControl.CC_Slider,
+        option,
+        QStyle.SubControl.SC_SliderGroove,
+        slider,
+    )
+    handle = slider.style().subControlRect(
+        QStyle.ComplexControl.CC_Slider,
+        option,
+        QStyle.SubControl.SC_SliderHandle,
+        slider,
+    )
+    marker_x = slider._point_x(20.0, groove, handle.width(), option.upsideDown)
+    assert marker_x == pytest.approx(handle.center().x(), abs=1)
+
+
+def test_seek_track_endpoints_and_overlapping_marker_use_handle_centers(qtbot) -> None:
+    controls = ControlBar()
+    controls.resize(800, controls.sizeHint().height())
+    qtbot.addWidget(controls)
+    controls.show()
+    controls.set_position(0.0, 100.0)
+    controls.set_ab_points(0.0, 30.0, True)
+
+    slider = controls.seek_slider
+    option = QStyleOptionSlider()
+    slider.initStyleOption(option)
+    groove = slider.style().subControlRect(
+        QStyle.ComplexControl.CC_Slider,
+        option,
+        QStyle.SubControl.SC_SliderGroove,
+        slider,
+    )
+    handle = slider.style().subControlRect(
+        QStyle.ComplexControl.CC_Slider,
+        option,
+        QStyle.SubControl.SC_SliderHandle,
+        slider,
+    )
+    start_x = slider._point_x(0.0, groove, handle.width(), option.upsideDown)
+    finish_x = slider._point_x(100.0, groove, handle.width(), option.upsideDown)
+
+    assert start_x == groove.left() + round(handle.width() / 2)
+    assert finish_x == groove.right() - round(handle.width() / 2) + 1
+
+    image = QImage(slider.size(), QImage.Format.Format_ARGB32)
+    image.fill(Qt.GlobalColor.transparent)
+    slider.render(image)
+    visible_a_pixels = [
+        y
+        for y in range(image.height())
+        if image.pixelColor(start_x, y).getRgb()[:3] == (97, 210, 135)
+    ]
+    assert visible_a_pixels
 
 
 def test_volume_click_jumps_to_pointer(qtbot) -> None:

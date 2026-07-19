@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QMouseEvent, QPaintEvent, QPainter, QPen
 from PySide6.QtWidgets import QSlider, QStyle, QStyleOptionSlider
 
@@ -16,6 +16,31 @@ class DirectSlider(QSlider):
         self._ab_end: float | None = None
         self._ab_duration = 0.0
         self._ab_enabled = False
+        self._centered_track = False
+
+    def set_centered_track(self, enabled: bool) -> None:
+        self._centered_track = enabled
+        self.setStyleSheet(
+            """
+            QSlider::groove:horizontal,
+            QSlider::sub-page:horizontal,
+            QSlider::add-page:horizontal,
+            QSlider::handle:horizontal {
+                background: transparent;
+                border: none;
+            }
+            QSlider::groove:horizontal {
+                height: 5px;
+            }
+            QSlider::handle:horizontal {
+                width: 14px;
+                margin: -5px 0;
+            }
+            """
+            if enabled
+            else ""
+        )
+        self.update()
 
     def set_ab_points(
         self,
@@ -32,7 +57,7 @@ class DirectSlider(QSlider):
 
     def paintEvent(self, event: QPaintEvent) -> None:
         super().paintEvent(event)
-        if self.orientation() != Qt.Orientation.Horizontal or self._ab_duration <= 0:
+        if self.orientation() != Qt.Orientation.Horizontal:
             return
 
         option = QStyleOptionSlider()
@@ -43,11 +68,59 @@ class DirectSlider(QSlider):
             QStyle.SubControl.SC_SliderGroove,
             self,
         )
+        handle = self.style().subControlRect(
+            QStyle.ComplexControl.CC_Slider,
+            option,
+            QStyle.SubControl.SC_SliderHandle,
+            self,
+        )
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        start_x = self._point_x(self._ab_start, groove)
-        end_x = self._point_x(self._ab_end, groove)
+        if self._centered_track:
+            track_left = self._value_x(
+                self.minimum(), groove, handle.width(), option.upsideDown
+            )
+            track_right = self._value_x(
+                self.maximum(), groove, handle.width(), option.upsideDown
+            )
+            position_x = self._value_x(
+                self.value(), groove, handle.width(), option.upsideDown
+            )
+            track_y = groove.center().y()
+            track_color = QColor("#3a3f49")
+            progress_color = QColor("#477eae")
+            handle_color = QColor("#6ca6dc")
+            if not self.isEnabled():
+                track_color.setAlpha(115)
+                progress_color.setAlpha(115)
+                handle_color.setAlpha(115)
+
+            track_pen = QPen(track_color, max(1, groove.height()))
+            track_pen.setCapStyle(Qt.PenCapStyle.FlatCap)
+            painter.setPen(track_pen)
+            painter.drawLine(track_left, track_y, track_right, track_y)
+
+            progress_pen = QPen(progress_color, max(1, groove.height()))
+            progress_pen.setCapStyle(Qt.PenCapStyle.FlatCap)
+            painter.setPen(progress_pen)
+            if option.upsideDown:
+                painter.drawLine(position_x, track_y, track_right, track_y)
+            else:
+                painter.drawLine(track_left, track_y, position_x, track_y)
+        else:
+            handle_color = QColor("#6ca6dc")
+
+        start_x = (
+            self._point_x(self._ab_start, groove, handle.width(), option.upsideDown)
+            if self._ab_duration > 0
+            else None
+        )
+        end_x = (
+            self._point_x(self._ab_end, groove, handle.width(), option.upsideDown)
+            if self._ab_duration > 0
+            else None
+        )
         if self._ab_enabled and start_x is not None and end_x is not None:
             fill = QColor(240, 180, 41, 210)
             painter.fillRect(start_x, groove.top(), max(1, end_x - start_x), groove.height(), fill)
@@ -58,22 +131,53 @@ class DirectSlider(QSlider):
             painter.setPen(QPen(QColor("#f2a65a"), 2))
             painter.drawLine(end_x, 1, end_x, self.height() - 2)
 
-        handle = self.style().subControlRect(
-            QStyle.ComplexControl.CC_Slider,
-            option,
-            QStyle.SubControl.SC_SliderHandle,
-            self,
-        )
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#6ca6dc"))
-        painter.drawEllipse(handle)
+        if self._centered_track or self._ab_duration > 0:
+            handle_center_x = self._value_x(
+                self.value(), groove, handle.width(), option.upsideDown
+            )
+            handle_center_y = handle.y() + handle.height() / 2
+            handle_diameter = 9.0
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(handle_color)
+            painter.drawEllipse(
+                QRectF(
+                    handle_center_x - handle_diameter / 2,
+                    handle_center_y - handle_diameter / 2,
+                    handle_diameter,
+                    handle_diameter,
+                )
+            )
         painter.end()
 
-    def _point_x(self, point: float | None, groove) -> int | None:
+    def _point_x(
+        self,
+        point: float | None,
+        groove,
+        handle_width: int,
+        upside_down: bool,
+    ) -> int | None:
         if point is None:
             return None
         ratio = max(0.0, min(1.0, point / self._ab_duration))
-        return groove.left() + round(ratio * groove.width())
+        point_value = self.minimum() + int(ratio * (self.maximum() - self.minimum()))
+        return self._value_x(point_value, groove, handle_width, upside_down)
+
+    def _value_x(
+        self,
+        value: int,
+        groove,
+        handle_width: int,
+        upside_down: bool,
+    ) -> int:
+        available = max(0, groove.width() - handle_width)
+        handle_position = QStyle.sliderPositionFromValue(
+            self.minimum(),
+            self.maximum(),
+            value,
+            available,
+            upside_down,
+        )
+        return groove.left() + handle_position + round(handle_width / 2)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() != Qt.MouseButton.LeftButton:
