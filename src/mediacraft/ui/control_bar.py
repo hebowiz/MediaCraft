@@ -1,19 +1,19 @@
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QSlider,
+    QStyle,
     QVBoxLayout,
     QWidget,
 )
 
+from mediacraft.ui.direct_slider import DirectSlider
 from mediacraft.utils.time_format import format_time
 
 
 class ControlBar(QWidget):
-    open_requested = Signal()
     play_pause_requested = Signal()
     stop_requested = Signal()
     seek_requested = Signal(float)
@@ -29,15 +29,14 @@ class ControlBar(QWidget):
         self._duration = 0.0
         self._seeking = False
 
-        self.seek_slider = QSlider(Qt.Orientation.Horizontal)
+        self.seek_slider = DirectSlider(Qt.Orientation.Horizontal)
         self.seek_slider.setRange(0, 10_000)
         self.seek_slider.setEnabled(False)
-        self.seek_slider.sliderPressed.connect(self._on_seek_started)
-        self.seek_slider.sliderReleased.connect(self._on_seek_finished)
+        self.seek_slider.interaction_started.connect(self._on_seek_started)
+        self.seek_slider.value_committed.connect(self._on_seek_finished)
 
-        self.open_button = QPushButton("開く")
-        self.play_button = QPushButton("再生")
-        self.stop_button = QPushButton("停止")
+        self.play_button = QPushButton()
+        self.stop_button = QPushButton()
         self.time_label = QLabel("00:00:00 / 00:00:00")
 
         self.speed_combo = QComboBox()
@@ -47,16 +46,36 @@ class ControlBar(QWidget):
             self.speed_combo.addItem(f"{speed:.2f}x", speed)
         self.speed_combo.setCurrentIndex(self.SPEEDS.index(1.0))
 
-        self.mute_button = QPushButton("ミュート")
-        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.mute_button = QPushButton()
+        self.volume_slider = DirectSlider(Qt.Orientation.Horizontal)
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setValue(100)
         self.volume_slider.setFixedWidth(120)
         self.volume_label = QLabel("100%")
-        self.fullscreen_button = QPushButton("全画面")
+        self.fullscreen_button = QPushButton()
+
+        self._configure_icon_button(
+            self.play_button,
+            QStyle.StandardPixmap.SP_MediaPlay,
+            "再生",
+        )
+        self._configure_icon_button(
+            self.stop_button,
+            QStyle.StandardPixmap.SP_MediaStop,
+            "停止",
+        )
+        self._configure_icon_button(
+            self.mute_button,
+            QStyle.StandardPixmap.SP_MediaVolume,
+            "ミュート",
+        )
+        self._configure_icon_button(
+            self.fullscreen_button,
+            QStyle.StandardPixmap.SP_TitleBarMaxButton,
+            "フルスクリーン",
+        )
 
         row = QHBoxLayout()
-        row.addWidget(self.open_button)
         row.addWidget(self.play_button)
         row.addWidget(self.stop_button)
         row.addWidget(self.time_label)
@@ -73,7 +92,6 @@ class ControlBar(QWidget):
         layout.addWidget(self.seek_slider)
         layout.addLayout(row)
 
-        self.open_button.clicked.connect(self.open_requested.emit)
         self.play_button.clicked.connect(self.play_pause_requested.emit)
         self.stop_button.clicked.connect(self.stop_requested.emit)
         self.volume_slider.valueChanged.connect(self.volume_requested.emit)
@@ -90,14 +108,33 @@ class ControlBar(QWidget):
         self.time_label.setText(f"{format_time(position)} / {format_time(duration)}")
 
     def set_playing(self, playing: bool) -> None:
-        self.play_button.setText("一時停止" if playing else "再生")
+        icon = QStyle.StandardPixmap.SP_MediaPause if playing else QStyle.StandardPixmap.SP_MediaPlay
+        label = "一時停止" if playing else "再生"
+        self.play_button.setIcon(self.style().standardIcon(icon))
+        self.play_button.setToolTip(label)
+        self.play_button.setAccessibleName(label)
 
     def set_volume(self, volume: int, muted: bool) -> None:
         self.volume_slider.blockSignals(True)
         self.volume_slider.setValue(volume)
         self.volume_slider.blockSignals(False)
         self.volume_label.setText(f"{volume}%")
-        self.mute_button.setText("ミュート解除" if muted else "ミュート")
+        icon = QStyle.StandardPixmap.SP_MediaVolumeMuted if muted else QStyle.StandardPixmap.SP_MediaVolume
+        label = "ミュート解除" if muted else "ミュート"
+        self.mute_button.setIcon(self.style().standardIcon(icon))
+        self.mute_button.setToolTip(label)
+        self.mute_button.setAccessibleName(label)
+
+    def set_fullscreen(self, fullscreen: bool) -> None:
+        icon = (
+            QStyle.StandardPixmap.SP_TitleBarNormalButton
+            if fullscreen
+            else QStyle.StandardPixmap.SP_TitleBarMaxButton
+        )
+        label = "フルスクリーン解除" if fullscreen else "フルスクリーン"
+        self.fullscreen_button.setIcon(self.style().standardIcon(icon))
+        self.fullscreen_button.setToolTip(label)
+        self.fullscreen_button.setAccessibleName(label)
 
     def set_speed(self, speed: float) -> None:
         self.speed_combo.blockSignals(True)
@@ -113,13 +150,25 @@ class ControlBar(QWidget):
     def _on_seek_started(self) -> None:
         self._seeking = True
 
-    def _on_seek_finished(self) -> None:
+    def _on_seek_finished(self, value: int) -> None:
         self._seeking = False
         if self._duration > 0:
-            ratio = self.seek_slider.value() / self.seek_slider.maximum()
+            ratio = value / self.seek_slider.maximum()
             self.seek_requested.emit(ratio * self._duration)
 
     def _emit_speed(self, index: int) -> None:
         speed = self.speed_combo.itemData(index)
         if speed is not None:
             self.speed_requested.emit(float(speed))
+
+    def _configure_icon_button(
+        self,
+        button: QPushButton,
+        icon: QStyle.StandardPixmap,
+        label: str,
+    ) -> None:
+        button.setFixedSize(40, 34)
+        button.setIconSize(QSize(20, 20))
+        button.setIcon(self.style().standardIcon(icon))
+        button.setToolTip(label)
+        button.setAccessibleName(label)

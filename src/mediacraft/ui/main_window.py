@@ -67,10 +67,10 @@ class MainWindow(QMainWindow):
     def toggle_fullscreen(self) -> None:
         if self.isFullScreen():
             self.showNormal()
-            self.control_bar.fullscreen_button.setText("全画面")
+            self.control_bar.set_fullscreen(False)
         else:
             self.showFullScreen()
-            self.control_bar.fullscreen_button.setText("全画面解除")
+            self.control_bar.set_fullscreen(True)
 
     def leave_fullscreen(self) -> None:
         if self.isFullScreen():
@@ -122,7 +122,6 @@ class MainWindow(QMainWindow):
 
     def _connect_signals(self) -> None:
         controls = self.control_bar
-        controls.open_requested.connect(self.open_file)
         controls.play_pause_requested.connect(self._controller.toggle_play_pause)
         controls.stop_requested.connect(self._controller.stop)
         controls.seek_requested.connect(self._controller.seek_absolute)
