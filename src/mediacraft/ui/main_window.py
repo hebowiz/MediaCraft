@@ -219,7 +219,6 @@ class MainWindow(QMainWindow):
         controls.stop_requested.connect(self._controller.stop)
         controls.frame_back_requested.connect(lambda: self._frame_controller.request_step(-1))
         controls.frame_forward_requested.connect(lambda: self._frame_controller.request_step(1))
-        controls.frame_mode_requested.connect(self._frame_controller.toggle_inspection_mode)
         controls.seek_requested.connect(self._controller.seek_absolute)
         controls.volume_requested.connect(self._controller.set_volume)
         controls.mute_requested.connect(self._controller.toggle_mute)

@@ -1,5 +1,5 @@
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -19,7 +19,6 @@ class ControlBar(QWidget):
     stop_requested = Signal()
     frame_back_requested = Signal()
     frame_forward_requested = Signal()
-    frame_mode_requested = Signal()
     seek_requested = Signal(float)
     volume_requested = Signal(int)
     mute_requested = Signal()
@@ -45,8 +44,6 @@ class ControlBar(QWidget):
         self.stop_button = QPushButton()
         self.frame_back_button = QPushButton()
         self.frame_forward_button = QPushButton()
-        self.frame_mode_button = QPushButton()
-        self.frame_mode_button.setCheckable(True)
         self.time_label = QLabel("00:00:00 / 00:00:00")
         self.frame_label = QLabel("Frame: --")
 
@@ -75,20 +72,15 @@ class ControlBar(QWidget):
             QStyle.StandardPixmap.SP_MediaStop,
             "停止",
         )
-        self._configure_icon_button(
+        self._configure_custom_icon_button(
             self.frame_back_button,
-            QStyle.StandardPixmap.SP_MediaSkipBackward,
+            self._frame_step_icon(forward=False),
             "1フレーム戻る",
         )
-        self._configure_icon_button(
+        self._configure_custom_icon_button(
             self.frame_forward_button,
-            QStyle.StandardPixmap.SP_MediaSkipForward,
+            self._frame_step_icon(forward=True),
             "1フレーム進む",
-        )
-        self._configure_icon_button(
-            self.frame_mode_button,
-            QStyle.StandardPixmap.SP_FileDialogDetailedView,
-            "フレーム検査モード",
         )
         self._configure_icon_button(
             self.mute_button,
@@ -106,7 +98,6 @@ class ControlBar(QWidget):
         row.addWidget(self.stop_button)
         row.addWidget(self.frame_back_button)
         row.addWidget(self.frame_forward_button)
-        row.addWidget(self.frame_mode_button)
         row.addWidget(self.time_label)
         row.addWidget(self.frame_label)
         row.addStretch(1)
@@ -125,7 +116,6 @@ class ControlBar(QWidget):
         self.stop_button.clicked.connect(self.stop_requested.emit)
         self.frame_back_button.clicked.connect(self.frame_back_requested.emit)
         self.frame_forward_button.clicked.connect(self.frame_forward_requested.emit)
-        self.frame_mode_button.clicked.connect(self.frame_mode_requested.emit)
         self.volume_slider.valueChanged.connect(self.volume_requested.emit)
         self.mute_button.clicked.connect(self.mute_requested.emit)
         self.speed_combo.currentIndexChanged.connect(self._emit_speed)
@@ -149,10 +139,6 @@ class ControlBar(QWidget):
 
     def set_frame_inspection(self, enabled: bool) -> None:
         self._frame_inspection = enabled
-        self.frame_mode_button.setChecked(enabled)
-        self.frame_mode_button.setToolTip(
-            "フレーム検査モードを終了" if enabled else "フレーム検査モード"
-        )
         self.frame_label.setStyleSheet("font-weight: 700;" if enabled else "")
         for widget in (
             self.speed_combo,
@@ -222,11 +208,44 @@ class ControlBar(QWidget):
         icon: QStyle.StandardPixmap,
         label: str,
     ) -> None:
+        self._configure_custom_icon_button(button, self._white_standard_icon(icon), label)
+
+    @staticmethod
+    def _configure_custom_icon_button(
+        button: QPushButton,
+        icon: QIcon,
+        label: str,
+    ) -> None:
         button.setFixedSize(40, 34)
         button.setIconSize(QSize(20, 20))
-        button.setIcon(self._white_standard_icon(icon))
+        button.setIcon(icon)
         button.setToolTip(label)
         button.setAccessibleName(label)
+
+    @staticmethod
+    def _frame_step_icon(*, forward: bool) -> QIcon:
+        pixmap = QPixmap(20, 20)
+        pixmap.fill(Qt.GlobalColor.transparent)
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen = QPen(QColor(255, 255, 255), 2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+
+        frame_left = 3 if forward else 9
+        painter.drawRoundedRect(frame_left, 4, 8, 12, 1, 1)
+        if forward:
+            painter.drawLine(11, 10, 17, 10)
+            painter.drawLine(14, 7, 17, 10)
+            painter.drawLine(14, 13, 17, 10)
+        else:
+            painter.drawLine(3, 10, 9, 10)
+            painter.drawLine(3, 10, 6, 7)
+            painter.drawLine(3, 10, 6, 13)
+        painter.end()
+        return QIcon(pixmap)
 
     def _white_standard_icon(self, icon: QStyle.StandardPixmap) -> QIcon:
         cached = self._white_icon_cache.get(icon)

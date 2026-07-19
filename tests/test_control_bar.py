@@ -25,7 +25,6 @@ def test_buttons_use_fixed_size_icons(qtbot) -> None:
         controls.stop_button,
         controls.frame_back_button,
         controls.frame_forward_button,
-        controls.frame_mode_button,
         controls.mute_button,
         controls.fullscreen_button,
     )
@@ -56,7 +55,7 @@ def test_frame_inspection_shows_precision_and_simplifies_controls(qtbot) -> None
 
     assert controls.frame_label.text() == "Frame: ~1,234"
     assert controls.time_label.text() == "00:00:01.234 / 00:00:10.000"
-    assert controls.frame_mode_button.isChecked()
+    assert not hasattr(controls, "frame_mode_button")
     assert not controls.speed_combo.isVisible()
     assert not controls.volume_slider.isVisible()
 
