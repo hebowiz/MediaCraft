@@ -12,6 +12,7 @@ Windows向けone-folder配布基盤まで実装済みです。
 - PySide6
 - mpv / libmpv
 - PyAV（CFR/VFR判定）
+- Windows Media Player ActiveX（AMV4のDirectShow/VfW再生）
 
 仕様の詳細は[`docs/video_player_spec.md`](docs/video_player_spec.md)を参照してください。
 
@@ -44,6 +45,7 @@ mediacraft
 ## 利用できる機能
 
 - ファイル選択とドラッグ＆ドロップによる単一動画の読み込み
+- AMV4 AVIの自動検出と、Windowsにインストール済みのAMV4 VfWコーデックによる再生
 - 再生、一時停止、停止
 - シークバーと5秒／30秒単位のシーク
 - 現在時刻と総時間の表示
@@ -78,6 +80,16 @@ mediacraft
 - ローテーション付きファイルログと未処理例外の記録
 - アプリ内の再生ボタンを基調にしたMediaCraftアイコン
 - ヘルプメニューから参照できるモード別キーボードショートカット一覧
+
+### AMV4 AVIについて
+
+AMV4を検出した場合は、アプリ本体をクラッシュさせる可能性があるPyAV解析を行わず、
+AVIヘッダーから再生時間とフレームレートを安全に取得します。再生にはWindowsへ登録済みの
+64bit版AMV4 VfWコーデックが必要です。AMV4コーデック本体はMediaCraftには同梱しません。
+
+AMV4はWindows Media PlayerのDirectShow/VfW経路へ自動的に切り替えて再生します。
+通常形式は従来どおりlibmpvを使用します。AMV4ではシークバー上のサムネイル表示は
+利用できません。また、AMV4のフレーム戻しは現在の既知制限です。
 
 ## 主な操作
 
@@ -151,11 +163,11 @@ Pythonを必要としないone-folder形式のアプリが
 自動実行されます。リリース時の主要依存バージョンは`requirements-lock.txt`で固定されます。
 
 ```powershell
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
-プレリリースタグは`v0.2.0-rc.1`のように指定します。GitHubの「Actions」→
+プレリリースタグは`v0.3.0-rc.1`のように指定します。GitHubの「Actions」→
 「Windows Release」→「Run workflow」から手動実行することもできます。既存Releaseに
 対して再実行した場合は、ZIPとSHA-256ファイルを新しいビルドで置き換えます。
 

@@ -4,6 +4,25 @@ import pytest
 from mediacraft.playlist.metadata_probe import PlaylistMetadataProbe
 
 
+def test_duration_probe_uses_safe_avi_header_for_amv4(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    media_file = tmp_path / "capture.avi"
+    media_file.write_bytes(b"RIFF\x00\x00\x00\x00AVI ")
+    probe = PlaylistMetadataProbe()
+    monkeypatch.setattr(
+        "mediacraft.playlist.metadata_probe.inspect_avi",
+        lambda _path: type(
+            "Info", (), {"is_amv4": True, "duration": 12.5}
+        )(),
+    )
+
+    with qtbot.waitSignal(probe.duration_ready) as blocker:
+        probe.probe([str(media_file)])
+
+    assert blocker.args == [str(media_file), 12.5]
+
+
 def test_duration_probe_reports_unreadable_media(qtbot, tmp_path) -> None:
     media_file = tmp_path / "empty.mp4"
     media_file.touch()

@@ -17,8 +17,8 @@
 * OS：Windows 10 / Windows 11
 * 言語：Python 3.11.9を基準とする
 * GUI：PySide6
-* 再生バックエンド：mpv / libmpv
-* メディア情報取得：mpvプロパティ、フレームレート判定にはPyAV
+* 再生バックエンド：通常形式はmpv / libmpv、AMV4 AVIはWindows Media Player ActiveX経由のDirectShow/VfW
+* メディア情報取得：mpvプロパティ、フレームレート判定にはPyAV。ただしAMV4 AVIは安全なRIFFヘッダー解析を使用する
 * 設定保存：QSettings
 * 配布形式：将来的にPyInstallerによるexe化を想定
 
@@ -30,10 +30,8 @@ PySide6 GUI
 PlayerController
     ↓
 PlayerBackend 抽象インターフェース
-    ↓
-libmpv
-    ↓
-FFmpeg系デコーダ
+    ├─ 通常形式 → libmpv → FFmpeg系デコーダ
+    └─ AMV4 AVI → Windows Media Player → DirectShow/VfW → インストール済みAMV4コーデック
 ```
 
 動画のデコード処理は自作せず、mpv/libmpvへ委譲する。
@@ -60,6 +58,10 @@ mpvを別プロセスとして起動するJSON IPC方式を採用する場合も
 * Python 3.11.9で動作する構成とし、Python 3.12以降に固有の機能は使用しない
 * 依存ライブラリはPython 3.11対応版を選定し、バージョンを依存定義ファイルで管理する
 * 再生バックエンドは`python-mpv`を介してlibmpvを利用し、Qtウィジェット内へ映像を描画する
+* AMV4 AVIはFourCCをデコーダーを起動せずに判定し、Windows Media Player ActiveX経由でインストール済みの64bit版AMV4 VfWコーデックを利用する
+* AMV4 AVIをPyAVの同一プロセス解析へ渡さず、未対応コーデックによるネイティブクラッシュからアプリ本体を保護する
+* AMV4コーデックはMediaCraftへ同梱せず、利用者が正規にインストールしたWindowsコーデックを使用する
+* AMV4のフレーム戻しは既知制限とし、将来対応とする
 * 開発時はローカル環境のmpv/libmpvを参照し、配布対応時に必要なDLLの同梱方法を整備する
 * 設定保存にはQSettingsを使用する
 * UIはWindowsで見やすいダークテーマを基本とし、標準的で理解しやすい操作性を優先する

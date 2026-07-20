@@ -10,6 +10,26 @@ from mediacraft.thumbnail.thumbnail_provider import (
 )
 
 
+def test_amv4_does_not_start_in_process_thumbnail_decode(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    media_file = tmp_path / "capture.avi"
+    media_file.touch()
+    monkeypatch.setattr(
+        "mediacraft.thumbnail.thumbnail_provider.is_amv4", lambda _path: True
+    )
+    provider = ThumbnailProvider()
+    provider.set_media(str(media_file))
+
+    key, image = provider.request(1.0)
+    provider.start_preload(10.0)
+
+    assert key == provider.cache_key(1.0)
+    assert image is None
+    assert not provider._tasks
+    assert provider._preload_task is None
+
+
 def create_test_video(path) -> None:
     with av.open(str(path), mode="w") as container:
         stream = container.add_stream("mpeg4", rate=10)

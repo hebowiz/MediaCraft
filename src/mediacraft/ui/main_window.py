@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 from mediacraft.app.settings import AppSettings
 from mediacraft.frame.frame_controller import FrameController
 from mediacraft.frame.media_probe import MediaProbe
-from mediacraft.player.mpv_backend import MpvBackend
+from mediacraft.player.adaptive_backend import AdaptiveBackend
 from mediacraft.player.player_backend import PlayerBackend
 from mediacraft.player.player_controller import PlayerController
 from mediacraft.player.playback_state import PlaybackState
@@ -66,7 +66,9 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(720, 480)
 
         self._settings = AppSettings()
-        self._controller = PlayerController(backend or MpvBackend(), self)
+        self.video_widget = VideoWidget()
+        selected_backend = backend or AdaptiveBackend(self.video_widget.windows_media_control)
+        self._controller = PlayerController(selected_backend, self)
         self._frame_controller = FrameController(self._controller, self)
         self._playlist_controller = PlaylistController(self)
         self._ab_repeat_controller = ABRepeatController(self._controller, self)
@@ -86,7 +88,6 @@ class MainWindow(QMainWindow):
         self._media_variable_rate: bool | None = None
         self._thumbnail_preload_enabled = self._settings.thumbnail_preload_enabled()
 
-        self.video_widget = VideoWidget()
         self.control_bar = ControlBar()
         self.playlist_panel = PlaylistPanel()
         self.playlist_panel.setMinimumWidth(250)

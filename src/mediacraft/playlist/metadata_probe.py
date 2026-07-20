@@ -2,6 +2,8 @@ import av
 from av.error import FFmpegError
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
 
+from mediacraft.media.avi_info import inspect_avi
+
 
 class DurationProbeSignals(QObject):
     finished = Signal(str, float)
@@ -53,6 +55,11 @@ class PlaylistMetadataProbe(QObject):
                     self.duration_ready.emit(path, self._duration_cache[path])
                 continue
             self._requested_paths.add(path)
+            avi_info = inspect_avi(path)
+            if avi_info is not None and avi_info.is_amv4:
+                self._duration_cache[path] = avi_info.duration
+                self.duration_ready.emit(path, avi_info.duration)
+                continue
             task = DurationProbeTask(path)
             self._tasks.add(task)
             task.signals.finished.connect(

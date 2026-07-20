@@ -2,7 +2,9 @@ import statistics
 
 import av
 from av.error import FFmpegError
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal
+
+from mediacraft.media.avi_info import inspect_avi
 
 
 def detect_variable_frame_rate(timestamps: list[float]) -> bool | None:
@@ -76,6 +78,13 @@ class MediaProbe(QObject):
         self._tasks: set[ProbeTask] = set()
 
     def probe(self, path: str) -> None:
+        avi_info = inspect_avi(path)
+        if avi_info is not None and avi_info.is_amv4:
+            QTimer.singleShot(
+                0,
+                lambda: self.analysis_ready.emit(path, avi_info.frame_rate, False),
+            )
+            return
         for pending in tuple(self._tasks):
             if self._thread_pool.tryTake(pending):
                 self._tasks.discard(pending)

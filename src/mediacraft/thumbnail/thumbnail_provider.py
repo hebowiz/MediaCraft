@@ -8,6 +8,7 @@ from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
 from PySide6.QtGui import QImage
 
 from mediacraft.thumbnail.thumbnail_cache import ThumbnailCache
+from mediacraft.media.avi_info import is_amv4
 
 
 def frame_to_image(frame, width: int) -> QImage:
@@ -214,6 +215,7 @@ class ThumbnailProvider(QObject):
         self._preload_task: ThumbnailPreloadTask | None = None
         self._preload_started = False
         self._coarse_max_distance_ms = 0
+        self._decoding_supported = True
 
     @property
     def media_path(self) -> str | None:
@@ -225,6 +227,7 @@ class ThumbnailProvider(QObject):
             return
         self._generation += 1
         self._path = resolved
+        self._decoding_supported = resolved is None or not is_amv4(resolved)
         self._cache.clear()
         self._coarse_cache.clear()
         self._pending_keys.clear()
@@ -245,7 +248,12 @@ class ThumbnailProvider(QObject):
     def request(self, timestamp: float) -> tuple[int, QImage | None]:
         key = self.cache_key(timestamp)
         cached = self._cache.get(key)
-        if cached is not None or self._path is None or key in self._pending_keys:
+        if (
+            cached is not None
+            or self._path is None
+            or not self._decoding_supported
+            or key in self._pending_keys
+        ):
             return key, cached
 
         for pending in tuple(self._tasks):
@@ -297,7 +305,12 @@ class ThumbnailProvider(QObject):
         return key, coarse[1] if coarse is not None else None
 
     def start_preload(self, duration: float) -> None:
-        if self._path is None or duration <= 0 or self._preload_started:
+        if (
+            self._path is None
+            or not self._decoding_supported
+            or duration <= 0
+            or self._preload_started
+        ):
             return
         self._preload_started = True
         interval = max(5.0, duration / 239)

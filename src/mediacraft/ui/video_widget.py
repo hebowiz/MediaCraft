@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QMouseEvent, QWheelEvent
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QMouseEvent, QResizeEvent, QWheelEvent
 from PySide6.QtWidgets import QApplication, QFrame, QLabel, QVBoxLayout
 
 from mediacraft.utils.drop_paths import local_drop_paths
@@ -31,6 +31,17 @@ class VideoWidget(QFrame):
         self._click_timer.setSingleShot(True)
         self._click_timer.setInterval(QApplication.doubleClickInterval() + 50)
         self._click_timer.timeout.connect(self.clicked.emit)
+        self._windows_media_control = None
+
+    def windows_media_control(self):
+        if self._windows_media_control is None:
+            from PySide6.QtAxContainer import QAxWidget
+
+            control = QAxWidget("WMPlayer.OCX", self)
+            control.setGeometry(self.rect())
+            control.hide()
+            self._windows_media_control = control
+        return self._windows_media_control
 
     def set_media_loaded(self, loaded: bool) -> None:
         self._placeholder.setVisible(not loaded)
@@ -72,3 +83,8 @@ class VideoWidget(QFrame):
             event.accept()
             return
         super().wheelEvent(event)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        if self._windows_media_control is not None:
+            self._windows_media_control.setGeometry(self.rect())
