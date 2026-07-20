@@ -39,6 +39,7 @@ class ControlBar(QWidget):
         self._duration = 0.0
         self._seeking = False
         self._frame_inspection = False
+        self._audio_mode = False
         self._ab_start: float | None = None
         self._ab_end: float | None = None
         self._ab_enabled = False
@@ -210,12 +211,21 @@ class ControlBar(QWidget):
         fps: float,
         variable: object,
     ) -> None:
+        if self._audio_mode:
+            self.frame_label.setText("Audio")
+            return
         frame_text = "--" if frame_number < 0 else f"{frame_number:,}"
         if variable is True:
             fps_text = "VFR"
         else:
             fps_text = f"{fps:.2f} FPS" if fps > 0 else "-- FPS"
         self.frame_label.setText(f"Frame: {frame_text} | {fps_text}")
+
+    def set_audio_mode(self, enabled: bool) -> None:
+        self._audio_mode = enabled
+        self.frame_back_button.setEnabled(not enabled)
+        self.frame_forward_button.setEnabled(not enabled)
+        self.frame_label.setText("Audio" if enabled else "Frame: -- | -- FPS")
 
     def set_frame_inspection(self, enabled: bool) -> None:
         self._frame_inspection = enabled

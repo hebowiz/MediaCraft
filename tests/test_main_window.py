@@ -3,6 +3,7 @@ from PySide6.QtCore import QPointF, QEvent, Qt
 from PySide6.QtGui import QAction, QKeySequence, QMouseEvent
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog
 
+from mediacraft.media.audio_metadata import AudioMetadata
 from mediacraft.player.playback_state import PlaybackState
 from mediacraft.playlist.playlist_controller import RepeatMode
 from mediacraft.ui.main_window import MainWindow
@@ -329,6 +330,83 @@ def test_folder_addition_uses_only_direct_media_files(qtbot, tmp_path) -> None:
         "a.mp4",
         "b.mkv",
     ]
+
+
+def test_folder_addition_includes_supported_audio_files(qtbot, tmp_path) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    for extension in window.AUDIO_EXTENSIONS:
+        (tmp_path / f"audio{extension}").touch()
+
+    window._add_paths([str(tmp_path)], play_first=False)
+
+    assert {entry.path.suffix for entry in window._playlist_controller.entries} == (
+        window.AUDIO_EXTENSIONS
+    )
+
+
+def test_audio_mode_disables_video_only_features_and_restores_them(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    audio = tmp_path / "sample.mp3"
+    video = tmp_path / "sample.mp4"
+    audio.touch()
+    video.touch()
+    probed: list[str] = []
+    monkeypatch.setattr(window._media_probe, "probe", probed.append)
+    monkeypatch.setattr(window._audio_metadata_probe, "probe", lambda _path: None)
+
+    window._add_paths([str(audio)], play_first=True)
+
+    assert backend.loaded_path == audio.resolve()
+    assert window._audio_mode
+    assert window.control_bar.frame_label.text() == "Audio"
+    assert window.video_widget._audio_panel.isVisibleTo(window.video_widget)
+    assert window.video_widget._audio_title.text() == "sample"
+    assert not window.frame_inspection_action.isEnabled()
+    assert not window.screenshot_action.isEnabled()
+    assert not window._shortcut_by_key["Ctrl+S"].isEnabled()
+    assert not window._shortcut_by_key[","].isEnabled()
+    assert not window._shortcut_by_key["."].isEnabled()
+    assert not window._shortcut_by_key["I"].isEnabled()
+    assert window._thumbnail_provider.media_path is None
+    assert probed == []
+
+    window._on_audio_metadata(
+        str(audio),
+        AudioMetadata(
+            title="Track Title",
+            artist="Track Artist",
+            album="Album Name",
+            bitrate_kbps=320,
+        ),
+    )
+
+    assert window.video_widget._audio_title.text() == "Track Title"
+    assert window.video_widget._audio_artist.text() == "アーティスト: Track Artist"
+    assert window.video_widget._audio_album.text() == "アルバム: Album Name"
+    assert window.video_widget._audio_bitrate.text() == "ビットレート: 320 kbps"
+
+    window._add_paths([str(video)], play_first=True)
+
+    assert backend.loaded_path == video.resolve()
+    assert not window._audio_mode
+    assert not window.video_widget._audio_panel.isVisibleTo(window.video_widget)
+    assert window.frame_inspection_action.isEnabled()
+    assert window.screenshot_action.isEnabled()
+    assert window._shortcut_by_key["Ctrl+S"].isEnabled()
+    assert window._shortcut_by_key[","].isEnabled()
+    assert window._shortcut_by_key["."].isEnabled()
+    assert window._shortcut_by_key["I"].isEnabled()
+    assert probed == [str(video.resolve())]
 
 
 def test_unreadable_playlist_item_is_skipped(qtbot, tmp_path) -> None:

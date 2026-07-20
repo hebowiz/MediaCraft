@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mediacraft"
 version = "0.3.0"
-description = "A Windows desktop video player for comfortable frame-by-frame inspection"
+description = "A Windows desktop media player for comfortable frame-by-frame inspection"
 readme = "README.md"
 license = "GPL-3.0-or-later"
 requires-python = ">=3.11"

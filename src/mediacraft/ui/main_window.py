@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from mediacraft.app.settings import AppSettings
 from mediacraft.frame.frame_controller import FrameController
 from mediacraft.frame.media_probe import MediaProbe
+from mediacraft.media.audio_metadata import AudioMetadata, AudioMetadataProbe
 from mediacraft.player.adaptive_backend import AdaptiveBackend
 from mediacraft.player.player_backend import PlayerBackend
 from mediacraft.player.player_controller import PlayerController
@@ -49,14 +50,23 @@ logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
-    MEDIA_FILTER = (
-        "メディアファイル (*.mp4 *.mkv *.avi *.mov *.wmv *.webm *.mpeg *.mpg "
-        "*.mts *.m2ts *.ts *.flv);;すべてのファイル (*)"
-    )
-    MEDIA_EXTENSIONS = {
+    VIDEO_EXTENSIONS = {
         ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm", ".mpeg", ".mpg",
         ".mts", ".m2ts", ".ts", ".flv",
     }
+    AUDIO_EXTENSIONS = {
+        ".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".opus", ".wma",
+        ".aif", ".aiff",
+    }
+    MEDIA_EXTENSIONS = VIDEO_EXTENSIONS | AUDIO_EXTENSIONS
+    MEDIA_FILTER = (
+        "メディアファイル (*.mp4 *.mkv *.avi *.mov *.wmv *.webm *.mpeg *.mpg "
+        "*.mts *.m2ts *.ts *.flv *.mp3 *.m4a *.aac *.wav *.flac *.ogg *.opus "
+        "*.wma *.aif *.aiff);;動画ファイル (*.mp4 *.mkv *.avi *.mov *.wmv "
+        "*.webm *.mpeg *.mpg *.mts *.m2ts *.ts *.flv);;音声ファイル (*.mp3 "
+        "*.m4a *.aac *.wav *.flac *.ogg *.opus *.wma *.aif *.aiff);;"
+        "すべてのファイル (*)"
+    )
 
     def __init__(self, backend: PlayerBackend | None = None) -> None:
         super().__init__()
@@ -74,9 +84,11 @@ class MainWindow(QMainWindow):
         self._ab_repeat_controller = ABRepeatController(self._controller, self)
         self._playlist_metadata_probe = PlaylistMetadataProbe(self)
         self._media_probe = MediaProbe(self)
+        self._audio_metadata_probe = AudioMetadataProbe(self)
         self._thumbnail_provider = ThumbnailProvider(self)
         self._player_initialized = False
         self._playback_active = False
+        self._audio_mode = False
         self._shortcuts: list[QShortcut] = []
         self._shortcut_by_key: dict[str, QShortcut] = {}
         self._shortcut_help_entries: list[ShortcutHelpEntry] = []
@@ -128,7 +140,9 @@ class MainWindow(QMainWindow):
         self._connect_signals()
         self._create_shortcuts()
         self._restore_settings()
-        self.statusBar().showMessage("ファイルを開くか、動画をドロップしてください。")
+        self.statusBar().showMessage(
+            "ファイルを開くか、動画・音声ファイルをドロップしてください。"
+        )
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
@@ -147,6 +161,7 @@ class MainWindow(QMainWindow):
         self._toast.stop()
         self._save_settings()
         self._media_probe.shutdown()
+        self._audio_metadata_probe.shutdown()
         self._thumbnail_provider.shutdown()
         self._playlist_metadata_probe.shutdown()
         self._controller.shutdown()
@@ -195,7 +210,7 @@ class MainWindow(QMainWindow):
     def add_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "動画ファイルをプレイリストへ追加",
+            "動画・音声ファイルをプレイリストへ追加",
             self._settings.last_directory(),
             self.MEDIA_FILTER,
         )
@@ -205,7 +220,7 @@ class MainWindow(QMainWindow):
     def add_folder(self) -> None:
         path = QFileDialog.getExistingDirectory(
             self,
-            "動画フォルダをプレイリストへ追加",
+            "メディアを含むフォルダをプレイリストへ追加",
             self._settings.last_directory(),
         )
         if path:
@@ -214,6 +229,11 @@ class MainWindow(QMainWindow):
     def take_screenshot(self) -> None:
         media_path = self._controller.current_file
         if media_path is None:
+            return
+        if self._audio_mode:
+            self.statusBar().showMessage(
+                "音声ファイルではスクリーンショットを保存できません。", 3000
+            )
             return
         directory_text = self._settings.screenshot_directory()
         directory = Path(directory_text) if directory_text else media_path.parent / "MediaCraft"
@@ -313,7 +333,6 @@ class MainWindow(QMainWindow):
         if self._controller.load_file(path):
             media_path = Path(path)
             self._settings.set_last_directory(str(media_path.parent))
-            self.video_widget.set_media_loaded(True)
             self.setWindowTitle(f"{media_path.name} - MediaCraft")
             self.statusBar().showMessage(str(media_path), 5000)
         elif requested_index + 1 < len(self._playlist_controller.entries):
@@ -474,8 +493,8 @@ class MainWindow(QMainWindow):
         controls.next_requested.connect(self._play_next)
         controls.shuffle_requested.connect(self._playlist_controller.toggle_shuffle)
         controls.repeat_requested.connect(self._playlist_controller.cycle_repeat_mode)
-        controls.frame_back_requested.connect(lambda: self._frame_controller.request_step(-1))
-        controls.frame_forward_requested.connect(lambda: self._frame_controller.request_step(1))
+        controls.frame_back_requested.connect(lambda: self._request_frame_step(-1))
+        controls.frame_forward_requested.connect(lambda: self._request_frame_step(1))
         controls.seek_requested.connect(self._controller.seek_absolute)
         controls.volume_requested.connect(self._controller.set_volume)
         controls.mute_requested.connect(self._controller.toggle_mute)
@@ -526,17 +545,10 @@ class MainWindow(QMainWindow):
         self._controller.state_changed.connect(self._sync_playback_icon)
         self._controller.volume_changed.connect(controls.set_volume)
         self._controller.speed_changed.connect(controls.set_speed)
-        self._controller.file_changed.connect(self._media_probe.probe)
-        self._controller.file_changed.connect(self._on_thumbnail_media_changed)
+        self._controller.file_changed.connect(self._on_media_changed)
         self._controller.file_changed.connect(self._playlist_controller.set_current_path)
         self._controller.file_changed.connect(
-            lambda _path: self.frame_inspection_action.setEnabled(True)
-        )
-        self._controller.file_changed.connect(
             lambda _path: self._set_ab_actions_enabled(True)
-        )
-        self._controller.file_changed.connect(
-            lambda _path: self.screenshot_action.setEnabled(True)
         )
         self._controller.error_occurred.connect(self._show_error)
         self._controller.media_ended.connect(self._on_media_ended)
@@ -546,6 +558,7 @@ class MainWindow(QMainWindow):
         )
         self._frame_controller.frame_display_changed.connect(controls.set_frame_info)
         self._media_probe.analysis_ready.connect(self._on_media_analysis)
+        self._audio_metadata_probe.metadata_ready.connect(self._on_audio_metadata)
         self._thumbnail_provider.thumbnail_ready.connect(self._on_thumbnail_ready)
         self._thumbnail_provider.coarse_thumbnail_ready.connect(
             self._on_coarse_thumbnail_ready
@@ -573,8 +586,8 @@ class MainWindow(QMainWindow):
             ("シーク・フレーム", "Shift+Right", "30秒進む", "10フレーム進む", lambda: self._seek_or_step(10, 30)),
             ("シーク・フレーム", "Ctrl+Left", "—", "100フレーム戻る", lambda: self._inspection_step(-100)),
             ("シーク・フレーム", "Ctrl+Right", "—", "100フレーム進む", lambda: self._inspection_step(100)),
-            ("シーク・フレーム", ",", "1フレーム戻る", "同じ", lambda: self._frame_controller.request_step(-1)),
-            ("シーク・フレーム", ".", "1フレーム進む", "同じ", lambda: self._frame_controller.request_step(1)),
+            ("シーク・フレーム", ",", "1フレーム戻る", "同じ", lambda: self._request_frame_step(-1)),
+            ("シーク・フレーム", ".", "1フレーム進む", "同じ", lambda: self._request_frame_step(1)),
             ("シーク・フレーム", "I", "確認モード切り替え", "確認モード解除", self.frame_inspection_action.trigger),
             ("音量・速度", "M", "ミュート切り替え", "同じ", self._controller.toggle_mute),
             ("音量・速度", "Up", "音量を5%上げる", "同じ", lambda: self._controller.adjust_volume(5)),
@@ -666,21 +679,30 @@ class MainWindow(QMainWindow):
         if not self._controller.clear_media():
             return
         self.video_widget.set_media_loaded(False)
+        self._audio_mode = False
+        self.control_bar.set_audio_mode(False)
         self._thumbnail_provider.set_media(None)
+        self._audio_metadata_probe.cancel()
         self._hide_thumbnail_preview()
         self.frame_inspection_action.setEnabled(False)
         self.screenshot_action.setEnabled(False)
         self.setWindowTitle("MediaCraft")
-        self.statusBar().showMessage("ファイルを開くか、動画をドロップしてください。")
+        self.statusBar().showMessage(
+            "ファイルを開くか、動画・音声ファイルをドロップしてください。"
+        )
 
     def _seek_or_step(self, frame_count: int, seconds: float) -> None:
-        if self._frame_controller.inspection_mode:
+        if self._frame_controller.inspection_mode and not self._audio_mode:
             self._frame_controller.request_step(frame_count)
         else:
             self._controller.seek_relative(seconds)
 
     def _inspection_step(self, frame_count: int) -> None:
-        if self._frame_controller.inspection_mode:
+        if self._frame_controller.inspection_mode and not self._audio_mode:
+            self._frame_controller.request_step(frame_count)
+
+    def _request_frame_step(self, frame_count: int) -> None:
+        if not self._audio_mode:
             self._frame_controller.request_step(frame_count)
 
     def _handle_escape(self) -> None:
@@ -698,6 +720,47 @@ class MainWindow(QMainWindow):
         self._media_variable_rate = variable_rate
         self._frame_controller.set_frame_rate_analysis(fps, variable_rate)
 
+    def _on_media_changed(self, path: str) -> None:
+        media_path = Path(path)
+        self._audio_mode = media_path.suffix.lower() in self.AUDIO_EXTENSIONS
+        self.control_bar.set_audio_mode(self._audio_mode)
+        self.frame_inspection_action.setEnabled(not self._audio_mode)
+        self.screenshot_action.setEnabled(not self._audio_mode)
+        for key in ("Ctrl+S", ",", ".", "I"):
+            shortcut = self._shortcut_by_key.get(key)
+            if shortcut is not None:
+                shortcut.setEnabled(not self._audio_mode)
+        if self._audio_mode:
+            if self._frame_controller.inspection_mode:
+                self._frame_controller.set_inspection_mode(False)
+            self.video_widget.set_audio_loaded(media_path.name)
+            self._audio_metadata_probe.probe(str(media_path))
+            self._thumbnail_provider.set_media(None)
+            self._hide_thumbnail_preview()
+            self._media_fps = 0.0
+            self._media_variable_rate = None
+            return
+        self._audio_metadata_probe.cancel()
+        self.video_widget.set_media_loaded(True)
+        self._media_probe.probe(path)
+        self._on_thumbnail_media_changed(path)
+
+    def _on_audio_metadata(self, path: str, metadata: AudioMetadata) -> None:
+        current_file = self._controller.current_file
+        if (
+            not self._audio_mode
+            or current_file is None
+            or Path(path).resolve() != current_file
+        ):
+            return
+        self.video_widget.set_audio_metadata(
+            title=metadata.title or current_file.stem,
+            artist=metadata.artist,
+            album=metadata.album,
+            bitrate_kbps=metadata.bitrate_kbps,
+            artwork=metadata.artwork,
+        )
+
     def _on_thumbnail_media_changed(self, path: str) -> None:
         self._thumbnail_timer.stop()
         self._thumbnail_preview.hide()
@@ -707,6 +770,9 @@ class MainWindow(QMainWindow):
         self._thumbnail_provider.set_media(path)
 
     def _on_seek_hovered(self, timestamp: float, global_position: QPoint) -> None:
+        if self._audio_mode:
+            self._hide_thumbnail_preview()
+            return
         self._thumbnail_hover_time = timestamp
         self._thumbnail_hover_position = global_position
         self._thumbnail_request_key = None
@@ -741,7 +807,7 @@ class MainWindow(QMainWindow):
             )
 
     def _start_thumbnail_preload(self, _position: float, duration: float) -> None:
-        if self._thumbnail_preload_enabled:
+        if self._thumbnail_preload_enabled and not self._audio_mode:
             self._thumbnail_provider.start_preload(duration)
 
     def _on_thumbnail_ready(

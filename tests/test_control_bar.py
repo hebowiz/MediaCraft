@@ -118,6 +118,24 @@ def test_cfr_frame_rate_is_displayed_as_fps(qtbot) -> None:
     assert controls.frame_label.text() == "Frame: -- | -- FPS"
 
 
+def test_audio_mode_disables_frame_controls(qtbot) -> None:
+    controls = ControlBar()
+    qtbot.addWidget(controls)
+
+    controls.set_audio_mode(True)
+    controls.set_frame_info(120, False, 60.0, False)
+
+    assert controls.frame_label.text() == "Audio"
+    assert not controls.frame_back_button.isEnabled()
+    assert not controls.frame_forward_button.isEnabled()
+
+    controls.set_audio_mode(False)
+
+    assert controls.frame_label.text() == "Frame: -- | -- FPS"
+    assert controls.frame_back_button.isEnabled()
+    assert controls.frame_forward_button.isEnabled()
+
+
 def test_ab_points_are_forwarded_to_seek_slider(qtbot) -> None:
     controls = ControlBar()
     qtbot.addWidget(controls)

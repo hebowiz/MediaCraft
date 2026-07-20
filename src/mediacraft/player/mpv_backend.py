@@ -36,6 +36,7 @@ class MpvBackend(PlayerBackend):
                 osc=False,
                 input_default_bindings=False,
                 input_vo_keyboard=False,
+                audio_display="no",
                 hwdec="auto-safe",
                 log_handler=self._log_message,
                 loglevel="warn",
