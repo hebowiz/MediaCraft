@@ -1,4 +1,4 @@
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
@@ -26,6 +26,8 @@ class ControlBar(QWidget):
     mute_requested = Signal()
     speed_requested = Signal(float)
     fullscreen_requested = Signal()
+    seek_hovered = Signal(float, QPoint)
+    seek_hover_left = Signal()
 
     SPEEDS = (0.10, 0.25, 0.50, 0.75, 1.00, 1.25, 1.50, 1.75, 2.00, 3.00, 4.00)
 
@@ -46,6 +48,8 @@ class ControlBar(QWidget):
         self.seek_slider.setEnabled(False)
         self.seek_slider.interaction_started.connect(self._on_seek_started)
         self.seek_slider.value_committed.connect(self._on_seek_finished)
+        self.seek_slider.hover_value_changed.connect(self._on_seek_hovered)
+        self.seek_slider.hover_left.connect(self.seek_hover_left.emit)
 
         self.previous_button = QPushButton()
         self.play_button = QPushButton()
@@ -251,6 +255,12 @@ class ControlBar(QWidget):
         if self._duration > 0:
             ratio = value / self.seek_slider.maximum()
             self.seek_requested.emit(ratio * self._duration)
+
+    def _on_seek_hovered(self, value: int, global_position: QPoint) -> None:
+        if self._duration <= 0:
+            return
+        ratio = value / max(1, self.seek_slider.maximum())
+        self.seek_hovered.emit(ratio * self._duration, global_position)
 
     def _emit_speed(self, index: int) -> None:
         speed = self.speed_combo.itemData(index)

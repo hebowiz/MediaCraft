@@ -1,7 +1,7 @@
 import pytest
-from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QLabel, QStyle, QStyleOptionSlider
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+from PySide6.QtGui import QImage, QMouseEvent
+from PySide6.QtWidgets import QApplication, QLabel, QStyle, QStyleOptionSlider
 
 from mediacraft.ui.control_bar import ControlBar
 
@@ -206,6 +206,30 @@ def test_seek_click_emits_clicked_position(qtbot) -> None:
         )
 
     assert blocker.args[0] == pytest.approx(50, abs=3)
+
+
+def test_seek_hover_emits_time_without_changing_position(qtbot) -> None:
+    controls = ControlBar()
+    controls.resize(800, controls.sizeHint().height())
+    controls.set_position(20, 200)
+    qtbot.addWidget(controls)
+    controls.show()
+    original_value = controls.seek_slider.value()
+    position = QPoint(round(controls.seek_slider.width() * 0.75), 2)
+    event = QMouseEvent(
+        QEvent.Type.MouseMove,
+        QPointF(position),
+        QPointF(controls.seek_slider.mapToGlobal(position)),
+        Qt.MouseButton.NoButton,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+
+    with qtbot.waitSignal(controls.seek_hovered) as blocker:
+        QApplication.sendEvent(controls.seek_slider, event)
+
+    assert blocker.args[0] == pytest.approx(150, abs=3)
+    assert controls.seek_slider.value() == original_value
 
 
 def test_speed_and_volume_stay_on_transport_row(qtbot) -> None:

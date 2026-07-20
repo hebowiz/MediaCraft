@@ -1,13 +1,14 @@
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QSignalBlocker, QTimer, Qt
+from PySide6.QtCore import QEvent, QObject, QPoint, QSignalBlocker, QTimer, Qt
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
     QCloseEvent,
     QDragEnterEvent,
     QDropEvent,
+    QImage,
     QKeySequence,
     QResizeEvent,
     QShortcut,
@@ -33,9 +34,11 @@ from mediacraft.playlist.playlist_controller import PlaylistController
 from mediacraft.playlist.metadata_probe import PlaylistMetadataProbe
 from mediacraft.repeat.ab_repeat_controller import ABRepeatController
 from mediacraft.screenshot.file_naming import build_screenshot_path
+from mediacraft.thumbnail.thumbnail_provider import ThumbnailProvider
 from mediacraft.ui.control_bar import ControlBar
 from mediacraft.ui.fullscreen_overlay import FullscreenOverlay
 from mediacraft.ui.playlist_panel import PlaylistPanel
+from mediacraft.ui.thumbnail_preview import ThumbnailPreview
 from mediacraft.ui.toast_notification import ToastNotification
 from mediacraft.ui.video_widget import VideoWidget
 from mediacraft.utils.drop_paths import local_drop_paths
@@ -67,11 +70,17 @@ class MainWindow(QMainWindow):
         self._ab_repeat_controller = ABRepeatController(self._controller, self)
         self._playlist_metadata_probe = PlaylistMetadataProbe(self)
         self._media_probe = MediaProbe(self)
+        self._thumbnail_provider = ThumbnailProvider(self)
         self._player_initialized = False
         self._playback_active = False
         self._shortcuts: list[QShortcut] = []
         self._shortcut_by_key: dict[str, QShortcut] = {}
         self._playlist_was_visible = True
+        self._thumbnail_hover_time = 0.0
+        self._thumbnail_hover_position: QPoint | None = None
+        self._thumbnail_request_key: int | None = None
+        self._media_fps = 0.0
+        self._media_variable_rate: bool | None = None
 
         self.video_widget = VideoWidget()
         self.control_bar = ControlBar()
@@ -96,6 +105,11 @@ class MainWindow(QMainWindow):
 
         self._fullscreen_overlay = FullscreenOverlay(self)
         self._toast = ToastNotification(self)
+        self._thumbnail_preview = ThumbnailPreview()
+        self._thumbnail_timer = QTimer(self)
+        self._thumbnail_timer.setSingleShot(True)
+        self._thumbnail_timer.setInterval(50)
+        self._thumbnail_timer.timeout.connect(self._request_thumbnail)
         self._overlay_hide_timer = QTimer(self)
         self._overlay_hide_timer.setSingleShot(True)
         self._overlay_hide_timer.setInterval(2000)
@@ -121,11 +135,14 @@ class MainWindow(QMainWindow):
         if app is not None:
             app.removeEventFilter(self)
         self._overlay_hide_timer.stop()
+        self._thumbnail_timer.stop()
+        self._thumbnail_preview.close()
         self._fullscreen_overlay.hide()
         self._set_fullscreen_cursor_hidden(False)
         self._toast.stop()
         self._save_settings()
         self._media_probe.shutdown()
+        self._thumbnail_provider.shutdown()
         self._playlist_metadata_probe.shutdown()
         self._controller.shutdown()
         event.accept()
@@ -475,6 +492,8 @@ class MainWindow(QMainWindow):
         controls.mute_requested.connect(self._controller.toggle_mute)
         controls.speed_requested.connect(self._controller.set_speed)
         controls.fullscreen_requested.connect(self.toggle_fullscreen)
+        controls.seek_hovered.connect(self._on_seek_hovered)
+        controls.seek_hover_left.connect(self._hide_thumbnail_preview)
 
         self.video_widget.files_dropped.connect(self._load_dropped_files)
         self.video_widget.clicked.connect(self._controller.toggle_play_pause)
@@ -508,6 +527,7 @@ class MainWindow(QMainWindow):
         )
 
         self._controller.position_changed.connect(controls.set_position)
+        self._controller.position_changed.connect(self._start_thumbnail_preload)
         self._controller.position_changed.connect(
             lambda _position, duration: self._playlist_controller.update_current_duration(duration)
         )
@@ -516,6 +536,7 @@ class MainWindow(QMainWindow):
         self._controller.volume_changed.connect(controls.set_volume)
         self._controller.speed_changed.connect(controls.set_speed)
         self._controller.file_changed.connect(self._media_probe.probe)
+        self._controller.file_changed.connect(self._on_thumbnail_media_changed)
         self._controller.file_changed.connect(self._playlist_controller.set_current_path)
         self._controller.file_changed.connect(
             lambda _path: self.frame_inspection_action.setEnabled(True)
@@ -534,6 +555,10 @@ class MainWindow(QMainWindow):
         )
         self._frame_controller.frame_display_changed.connect(controls.set_frame_info)
         self._media_probe.analysis_ready.connect(self._on_media_analysis)
+        self._thumbnail_provider.thumbnail_ready.connect(self._on_thumbnail_ready)
+        self._thumbnail_provider.coarse_thumbnail_ready.connect(
+            self._on_coarse_thumbnail_ready
+        )
         self._ab_repeat_controller.state_changed.connect(self._sync_ab_repeat_ui)
         self._ab_repeat_controller.message.connect(
             lambda message: self.statusBar().showMessage(message, 4000)
@@ -631,6 +656,8 @@ class MainWindow(QMainWindow):
         if not self._controller.clear_media():
             return
         self.video_widget.set_media_loaded(False)
+        self._thumbnail_provider.set_media(None)
+        self._hide_thumbnail_preview()
         self.frame_inspection_action.setEnabled(False)
         self.screenshot_action.setEnabled(False)
         self.setWindowTitle("MediaCraft")
@@ -657,7 +684,108 @@ class MainWindow(QMainWindow):
         if current_file is None or Path(path).resolve() != current_file:
             return
         variable_rate = variable if isinstance(variable, bool) else None
+        self._media_fps = fps
+        self._media_variable_rate = variable_rate
         self._frame_controller.set_frame_rate_analysis(fps, variable_rate)
+
+    def _on_thumbnail_media_changed(self, path: str) -> None:
+        self._thumbnail_timer.stop()
+        self._thumbnail_preview.hide()
+        self._thumbnail_request_key = None
+        self._media_fps = 0.0
+        self._media_variable_rate = None
+        self._thumbnail_provider.set_media(path)
+
+    def _on_seek_hovered(self, timestamp: float, global_position: QPoint) -> None:
+        self._thumbnail_hover_time = timestamp
+        self._thumbnail_hover_position = global_position
+        self._thumbnail_request_key = None
+        key, image = self._thumbnail_provider.cached(timestamp)
+        if image is None:
+            self._thumbnail_preview.show_pending(
+                timestamp,
+                self._thumbnail_frame_text(timestamp),
+                global_position,
+            )
+        else:
+            self._thumbnail_request_key = key
+            self._thumbnail_preview.show_thumbnail(
+                image,
+                timestamp,
+                self._thumbnail_frame_text(timestamp),
+                global_position,
+            )
+        self._thumbnail_timer.start()
+
+    def _request_thumbnail(self) -> None:
+        if self._thumbnail_hover_position is None:
+            return
+        key, image = self._thumbnail_provider.request(self._thumbnail_hover_time)
+        self._thumbnail_request_key = key
+        if image is not None:
+            self._thumbnail_preview.show_thumbnail(
+                image,
+                self._thumbnail_hover_time,
+                self._thumbnail_frame_text(self._thumbnail_hover_time),
+                self._thumbnail_hover_position,
+            )
+
+    def _start_thumbnail_preload(self, _position: float, duration: float) -> None:
+        self._thumbnail_provider.start_preload(duration)
+
+    def _on_thumbnail_ready(
+        self,
+        _path: str,
+        key: int,
+        _actual_timestamp: float,
+        image: QImage,
+    ) -> None:
+        if (
+            self._thumbnail_hover_position is None
+            or key != self._thumbnail_request_key
+            or not self._thumbnail_preview.isVisible()
+        ):
+            return
+        self._thumbnail_preview.show_thumbnail(
+            image,
+            self._thumbnail_hover_time,
+            self._thumbnail_frame_text(self._thumbnail_hover_time),
+            self._thumbnail_hover_position,
+        )
+
+    def _on_coarse_thumbnail_ready(
+        self,
+        _path: str,
+        _timestamp: float,
+        _image: QImage,
+    ) -> None:
+        if (
+            self._thumbnail_hover_position is None
+            or not self._thumbnail_preview.isVisible()
+        ):
+            return
+        _key, cached = self._thumbnail_provider.cached(self._thumbnail_hover_time)
+        if cached is None:
+            return
+        self._thumbnail_preview.show_thumbnail(
+            cached,
+            self._thumbnail_hover_time,
+            self._thumbnail_frame_text(self._thumbnail_hover_time),
+            self._thumbnail_hover_position,
+        )
+
+    def _hide_thumbnail_preview(self) -> None:
+        self._thumbnail_timer.stop()
+        self._thumbnail_hover_position = None
+        self._thumbnail_request_key = None
+        self._thumbnail_preview.hide()
+
+    def _thumbnail_frame_text(self, timestamp: float) -> str:
+        if self._media_fps <= 0:
+            return "Frame: --"
+        frame_number = max(0, round(timestamp * self._media_fps))
+        suffix = " (推定)" if self._media_variable_rate is True else ""
+        return f"Frame: {frame_number:,}{suffix}"
 
     def _probe_playlist_metadata(self, entries: object) -> None:
         self._playlist_metadata_probe.probe(

@@ -1,4 +1,4 @@
-from PySide6.QtCore import QRectF, Qt, Signal
+from PySide6.QtCore import QPoint, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QMouseEvent, QPaintEvent, QPainter, QPen
 from PySide6.QtWidgets import QSlider, QStyle, QStyleOptionSlider
 
@@ -8,6 +8,8 @@ class DirectSlider(QSlider):
 
     interaction_started = Signal()
     value_committed = Signal(int)
+    hover_value_changed = Signal(int, QPoint)
+    hover_left = Signal()
 
     def __init__(self, orientation: Qt.Orientation, parent=None) -> None:
         super().__init__(orientation, parent)
@@ -17,6 +19,7 @@ class DirectSlider(QSlider):
         self._ab_duration = 0.0
         self._ab_enabled = False
         self._centered_track = False
+        self.setMouseTracking(True)
 
     def set_centered_track(self, enabled: bool) -> None:
         self._centered_track = enabled
@@ -196,9 +199,21 @@ class DirectSlider(QSlider):
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if not self._pointer_active:
             super().mouseMoveEvent(event)
+            self.hover_value_changed.emit(
+                self._value_from_pointer(event),
+                event.globalPosition().toPoint(),
+            )
             return
         self._set_value_from_pointer(event)
+        self.hover_value_changed.emit(
+            self.value(),
+            event.globalPosition().toPoint(),
+        )
         event.accept()
+
+    def leaveEvent(self, event) -> None:
+        self.hover_left.emit()
+        super().leaveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if event.button() != Qt.MouseButton.LeftButton or not self._pointer_active:
@@ -212,6 +227,9 @@ class DirectSlider(QSlider):
         event.accept()
 
     def _set_value_from_pointer(self, event: QMouseEvent) -> None:
+        self.setValue(self._value_from_pointer(event))
+
+    def _value_from_pointer(self, event: QMouseEvent) -> int:
         option = QStyleOptionSlider()
         self.initStyleOption(option)
         style = self.style()
@@ -237,11 +255,10 @@ class DirectSlider(QSlider):
             slider_max = groove.bottom() - handle.height() + 1
             pointer_position = round(event.position().y() - handle.height() / 2)
 
-        value = QStyle.sliderValueFromPosition(
+        return QStyle.sliderValueFromPosition(
             self.minimum(),
             self.maximum(),
             pointer_position - slider_min,
             max(1, slider_max - slider_min),
             option.upsideDown,
         )
-        self.setValue(value)
