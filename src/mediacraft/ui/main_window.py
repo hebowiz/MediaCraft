@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
         self._player_initialized = False
         self._playback_active = False
         self._shortcuts: list[QShortcut] = []
+        self._shortcut_by_key: dict[str, QShortcut] = {}
         self._playlist_was_visible = True
 
         self.video_widget = VideoWidget()
@@ -159,15 +160,15 @@ class MainWindow(QMainWindow):
             self._show_fullscreen_overlay()
         return super().eventFilter(watched, event)
 
-    def open_file(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
+    def open_files(self) -> None:
+        paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "動画ファイルを開く",
+            "ファイルを開く",
             self._settings.last_directory(),
             self.MEDIA_FILTER,
         )
-        if path:
-            self._add_paths([path], play_first=True)
+        if paths:
+            self._add_paths(paths, play_first=True, replace=True)
 
     def add_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
@@ -233,6 +234,7 @@ class MainWindow(QMainWindow):
 
     def _enter_fullscreen(self) -> None:
         self._playlist_was_visible = self.playlist_panel.isVisible()
+        self._set_playlist_toggle_enabled(False)
         self.playlist_panel.hide()
         self._main_layout.removeWidget(self.control_bar)
         self._fullscreen_overlay.attach_control_bar(self.control_bar)
@@ -254,6 +256,7 @@ class MainWindow(QMainWindow):
         self.showNormal()
         if self._playlist_was_visible:
             self.playlist_panel.show()
+        self._set_playlist_toggle_enabled(True)
         self.control_bar.set_fullscreen(False)
 
     def _show_fullscreen_overlay(self) -> None:
@@ -354,15 +357,9 @@ class MainWindow(QMainWindow):
 
     def _create_menu(self) -> None:
         file_menu = self.menuBar().addMenu("ファイル")
-        open_action = QAction("開く", self)
-        open_action.setShortcut(QKeySequence.StandardKey.Open)
-        open_action.triggered.connect(self.open_file)
+        open_action = QAction("ファイルを開く\tCtrl+O", self)
+        open_action.triggered.connect(self.open_files)
         file_menu.addAction(open_action)
-
-        add_files_action = QAction("複数ファイルを追加", self)
-        add_files_action.setShortcut(QKeySequence("Ctrl+Shift+O"))
-        add_files_action.triggered.connect(self.add_files)
-        file_menu.addAction(add_files_action)
 
         add_folder_action = QAction("フォルダを追加", self)
         add_folder_action.triggered.connect(self.add_folder)
@@ -398,30 +395,25 @@ class MainWindow(QMainWindow):
         file_menu.addAction(exit_action)
 
         playback_menu = self.menuBar().addMenu("再生")
-        self.set_a_action = QAction("A点を設定", self)
-        self.set_a_action.setShortcut(QKeySequence("A"))
+        self.set_a_action = QAction("A点を設定\tA", self)
         self.set_a_action.triggered.connect(self._ab_repeat_controller.set_point_a)
         playback_menu.addAction(self.set_a_action)
 
-        self.set_b_action = QAction("B点を設定", self)
-        self.set_b_action.setShortcut(QKeySequence("B"))
+        self.set_b_action = QAction("B点を設定\tB", self)
         self.set_b_action.triggered.connect(self._ab_repeat_controller.set_point_b)
         playback_menu.addAction(self.set_b_action)
 
-        self.ab_repeat_action = QAction("A-Bリピート", self)
+        self.ab_repeat_action = QAction("A-Bリピート\tR", self)
         self.ab_repeat_action.setCheckable(True)
-        self.ab_repeat_action.setShortcut(QKeySequence("R"))
         self.ab_repeat_action.triggered.connect(self._ab_repeat_controller.set_enabled)
         playback_menu.addAction(self.ab_repeat_action)
 
         playback_menu.addSeparator()
-        self.seek_a_action = QAction("A点へ移動", self)
-        self.seek_a_action.setShortcut(QKeySequence("Shift+A"))
+        self.seek_a_action = QAction("A点へ移動\tShift+A", self)
         self.seek_a_action.triggered.connect(self._ab_repeat_controller.seek_to_a)
         playback_menu.addAction(self.seek_a_action)
 
-        self.seek_b_action = QAction("B点へ移動", self)
-        self.seek_b_action.setShortcut(QKeySequence("Shift+B"))
+        self.seek_b_action = QAction("B点へ移動\tShift+B", self)
         self.seek_b_action.triggered.connect(self._ab_repeat_controller.seek_to_b)
         playback_menu.addAction(self.seek_b_action)
 
@@ -450,31 +442,25 @@ class MainWindow(QMainWindow):
             action.setEnabled(False)
 
         view_menu = self.menuBar().addMenu("表示")
-        self.playlist_action = QAction("プレイリスト", self)
+        self.playlist_action = QAction("プレイリスト\tCtrl+L", self)
         self.playlist_action.setCheckable(True)
         self.playlist_action.setChecked(True)
-        self.playlist_action.setShortcut(QKeySequence("Ctrl+L"))
         self.playlist_action.triggered.connect(self._set_playlist_visible)
         view_menu.addAction(self.playlist_action)
         view_menu.addSeparator()
 
-        self.frame_inspection_action = QAction("フレーム確認モード", self)
+        self.frame_inspection_action = QAction("フレーム確認モード\tI", self)
         self.frame_inspection_action.setCheckable(True)
         self.frame_inspection_action.setEnabled(False)
-        self.frame_inspection_action.setShortcut(QKeySequence("I"))
-        self.frame_inspection_action.setShortcutContext(
-            Qt.ShortcutContext.ApplicationShortcut
-        )
         self.frame_inspection_action.triggered.connect(
             self._frame_controller.set_inspection_mode
         )
         view_menu.addAction(self.frame_inspection_action)
         view_menu.addSeparator()
 
-        fullscreen_action = QAction("フルスクリーン", self)
-        fullscreen_action.setShortcut(QKeySequence("F"))
-        fullscreen_action.triggered.connect(self.toggle_fullscreen)
-        view_menu.addAction(fullscreen_action)
+        self.fullscreen_action = QAction("フルスクリーン\tF", self)
+        self.fullscreen_action.triggered.connect(self.toggle_fullscreen)
+        view_menu.addAction(self.fullscreen_action)
 
     def _connect_signals(self) -> None:
         controls = self.control_bar
@@ -554,12 +540,10 @@ class MainWindow(QMainWindow):
         )
 
     def _create_shortcuts(self) -> None:
-        self.screenshot_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
-        self.screenshot_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
-        self.screenshot_shortcut.activated.connect(self.take_screenshot)
-        self._shortcuts.append(self.screenshot_shortcut)
-
         bindings = (
+            ("Ctrl+O", self.open_files),
+            ("Ctrl+S", self.take_screenshot),
+            ("Ctrl+L", self.playlist_action.trigger),
             ("Space", self._controller.toggle_play_pause),
             ("Return", self._controller.toggle_play_pause),
             ("S", self._controller.stop),
@@ -577,15 +561,35 @@ class MainWindow(QMainWindow):
             ("[", lambda: self._controller.adjust_speed(-0.05)),
             ("]", lambda: self._controller.adjust_speed(0.05)),
             ("Backspace", lambda: self._controller.set_speed(1.0)),
-            ("PageUp", self._play_previous),
-            ("PageDown", self._play_next),
+            ("A", self.set_a_action.trigger),
+            ("B", self.set_b_action.trigger),
+            ("R", self.ab_repeat_action.trigger),
+            ("Shift+A", self.seek_a_action.trigger),
+            ("Shift+B", self.seek_b_action.trigger),
+            ("I", self.frame_inspection_action.trigger),
+            ("F", self.fullscreen_action.trigger),
+            ("PgUp", self._play_previous),
+            ("PgDown", self._play_next),
             ("Escape", self._handle_escape),
         )
         for key, callback in bindings:
-            shortcut = QShortcut(QKeySequence(key), self)
-            shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
-            shortcut.activated.connect(callback)
-            self._shortcuts.append(shortcut)
+            shortcut = self._register_shortcut(key, callback)
+            if key == "Ctrl+S":
+                self.screenshot_shortcut = shortcut
+
+    def _register_shortcut(self, key: str, callback) -> QShortcut:
+        sequence = QKeySequence(key)
+        normalized_key = sequence.toString(QKeySequence.SequenceFormat.PortableText)
+        if sequence.isEmpty():
+            raise ValueError(f"ショートカットを解釈できません: {key}")
+        if normalized_key in self._shortcut_by_key:
+            raise ValueError(f"ショートカットが重複しています: {normalized_key}")
+        shortcut = QShortcut(sequence, self)
+        shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        shortcut.activated.connect(callback)
+        self._shortcut_by_key[normalized_key] = shortcut
+        self._shortcuts.append(shortcut)
+        return shortcut
 
     def _play_previous(self) -> None:
         if not self._playlist_controller.play_previous():
@@ -663,6 +667,12 @@ class MainWindow(QMainWindow):
     def _set_playlist_visible(self, visible: bool) -> None:
         self.playlist_panel.setVisible(visible)
         self.playlist_action.setChecked(visible)
+
+    def _set_playlist_toggle_enabled(self, enabled: bool) -> None:
+        self.playlist_action.setEnabled(enabled)
+        shortcut = self._shortcut_by_key.get("Ctrl+L")
+        if shortcut is not None:
+            shortcut.setEnabled(enabled)
 
     def _set_screenshot_format(self, image_format: str) -> None:
         self._settings.set_screenshot_format(image_format)

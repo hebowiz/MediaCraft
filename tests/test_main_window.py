@@ -1,7 +1,7 @@
 from conftest import FakeBackend
 from PySide6.QtCore import QPointF, QEvent, Qt
-from PySide6.QtGui import QKeySequence, QMouseEvent
-from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QAction, QKeySequence, QMouseEvent
+from PySide6.QtWidgets import QApplication, QFileDialog
 
 from mediacraft.player.playback_state import PlaybackState
 from mediacraft.ui.main_window import MainWindow
@@ -21,9 +21,12 @@ def test_window_initializes_backend_and_controls(qtbot) -> None:
     assert window.video_widget.isVisible()
     assert window.playlist_panel.window() is window
     assert not window.playlist_panel.isWindow()
-    assert window.frame_inspection_action.text() == "フレーム確認モード"
-    assert window.frame_inspection_action.shortcut() == QKeySequence("I")
+    assert window.frame_inspection_action.text() == "フレーム確認モード\tI"
     assert not window.frame_inspection_action.isEnabled()
+    assert all(
+        shortcut.context() is Qt.ShortcutContext.ApplicationShortcut
+        for shortcut in window._shortcuts
+    )
 
     window.close()
     assert backend.shutdown_called
@@ -49,10 +52,26 @@ def test_fullscreen_uses_mouse_activated_overlay(qtbot, tmp_path) -> None:
     assert not window.menuBar().isVisible()
     assert not window.statusBar().isVisible()
     assert not window.playlist_panel.isVisible()
+    assert not window.playlist_action.isEnabled()
+    assert not window._shortcut_by_key["Ctrl+L"].isEnabled()
     assert window.control_bar.parentWidget() is window._fullscreen_overlay
     assert window.control_bar.fullscreen_button.size() == button_size
     assert window._fullscreen_overlay.width() == window.width()
     assert "background-color: transparent" in window.control_bar.styleSheet()
+
+    backend.current_position = 12.0
+    window._controller.refresh()
+    qtbot.keyClick(window, Qt.Key.Key_A)
+    qtbot.waitUntil(lambda: window._ab_repeat_controller.point_a == 12.0)
+    qtbot.keyClick(window, Qt.Key.Key_M)
+    qtbot.waitUntil(lambda: backend.muted)
+    qtbot.keyClick(
+        window,
+        Qt.Key.Key_L,
+        modifier=Qt.KeyboardModifier.ControlModifier,
+    )
+    assert window.playlist_action.isChecked()
+    assert window._playlist_was_visible
 
     window._hide_fullscreen_overlay()
     assert not window._fullscreen_overlay.isVisible()
@@ -76,6 +95,8 @@ def test_fullscreen_uses_mouse_activated_overlay(qtbot, tmp_path) -> None:
     assert window.menuBar().isVisible()
     assert window.statusBar().isVisible()
     assert window.playlist_panel.isVisible()
+    assert window.playlist_action.isEnabled()
+    assert window._shortcut_by_key["Ctrl+L"].isEnabled()
     assert window.control_bar.parentWidget() is window.centralWidget()
 
 
@@ -147,6 +168,27 @@ def test_frame_inspection_menu_action_tracks_mode(qtbot, tmp_path) -> None:
     assert not window.frame_inspection_action.isChecked()
 
 
+def test_fullscreen_preserves_hidden_playlist_and_reenables_toggle(qtbot) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    window._set_playlist_visible(False)
+
+    window.toggle_fullscreen()
+    qtbot.waitUntil(window.isFullScreen)
+    assert not window._shortcut_by_key["Ctrl+L"].isEnabled()
+
+    window.leave_fullscreen()
+    qtbot.waitUntil(lambda: not window.isFullScreen())
+
+    assert not window.playlist_panel.isVisible()
+    assert not window.playlist_action.isChecked()
+    assert window.playlist_action.isEnabled()
+    assert window._shortcut_by_key["Ctrl+L"].isEnabled()
+
+
 def test_playlist_loads_multiple_files_and_advances_on_end(qtbot, tmp_path) -> None:
     backend = FakeBackend()
     window = MainWindow(backend)
@@ -168,6 +210,39 @@ def test_playlist_loads_multiple_files_and_advances_on_end(qtbot, tmp_path) -> N
 
     assert backend.loaded_path == second.resolve()
     assert window._playlist_controller.current_index == 1
+
+
+def test_open_files_replaces_playlist_and_accepts_multiple_selection(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    old_file = tmp_path / "old.mp4"
+    first = tmp_path / "first.mp4"
+    second = tmp_path / "second.mp4"
+    for path in (old_file, first, second):
+        path.touch()
+    window._add_paths([str(old_file)], play_first=True)
+    monkeypatch.setattr(
+        QFileDialog,
+        "getOpenFileNames",
+        lambda *_args, **_kwargs: ([str(first), str(second)], ""),
+    )
+
+    window.open_files()
+
+    assert [entry.path for entry in window._playlist_controller.entries] == [
+        first.resolve(),
+        second.resolve(),
+    ]
+    assert backend.loaded_path == first.resolve()
+    assert "Ctrl+Shift+O" not in window._shortcut_by_key
+    assert "複数ファイルを追加" not in {
+        action.text() for action in window.findChildren(QAction)
+    }
 
 
 def test_folder_addition_uses_only_direct_media_files(qtbot, tmp_path) -> None:
