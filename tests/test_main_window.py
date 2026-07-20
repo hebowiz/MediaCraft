@@ -28,6 +28,12 @@ def test_window_initializes_backend_and_controls(qtbot) -> None:
         for shortcut in window._shortcuts
     )
     assert "設定" in {action.text() for action in window.menuBar().actions()}
+    assert "ヘルプ" in {action.text() for action in window.menuBar().actions()}
+    assert window.shortcut_help_action.text() == "キーボードショートカット..."
+    assert len(window._shortcut_help_entries) == len(window._shortcuts) == 30
+    assert {entry.key for entry in window._shortcut_help_entries} == set(
+        window._shortcut_by_key
+    )
 
     window.close()
     assert backend.shutdown_called

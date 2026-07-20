@@ -39,6 +39,7 @@ from mediacraft.ui.control_bar import ControlBar
 from mediacraft.ui.fullscreen_overlay import FullscreenOverlay
 from mediacraft.ui.playlist_panel import PlaylistPanel
 from mediacraft.ui.settings_dialog import SettingsDialog
+from mediacraft.ui.shortcut_dialog import ShortcutDialog, ShortcutHelpEntry
 from mediacraft.ui.thumbnail_preview import ThumbnailPreview
 from mediacraft.ui.toast_notification import ToastNotification
 from mediacraft.ui.video_widget import VideoWidget
@@ -76,6 +77,7 @@ class MainWindow(QMainWindow):
         self._playback_active = False
         self._shortcuts: list[QShortcut] = []
         self._shortcut_by_key: dict[str, QShortcut] = {}
+        self._shortcut_help_entries: list[ShortcutHelpEntry] = []
         self._playlist_was_visible = True
         self._thumbnail_hover_time = 0.0
         self._thumbnail_hover_position: QPoint | None = None
@@ -458,6 +460,11 @@ class MainWindow(QMainWindow):
         self.fullscreen_action.triggered.connect(self.toggle_fullscreen)
         view_menu.addAction(self.fullscreen_action)
 
+        help_menu = self.menuBar().addMenu("ヘルプ")
+        self.shortcut_help_action = QAction("キーボードショートカット...", self)
+        self.shortcut_help_action.triggered.connect(self.show_shortcut_help)
+        help_menu.addAction(self.shortcut_help_action)
+
     def _connect_signals(self) -> None:
         controls = self.control_bar
         controls.previous_requested.connect(self._play_previous)
@@ -545,41 +552,48 @@ class MainWindow(QMainWindow):
 
     def _create_shortcuts(self) -> None:
         bindings = (
-            ("Ctrl+O", self.open_files),
-            ("Ctrl+S", self.take_screenshot),
-            ("Ctrl+L", self.playlist_action.trigger),
-            ("Space", self._controller.toggle_play_pause),
-            ("Return", self._controller.toggle_play_pause),
-            ("S", self._controller.stop),
-            ("Left", lambda: self._seek_or_step(-1, -5)),
-            ("Right", lambda: self._seek_or_step(1, 5)),
-            ("Shift+Left", lambda: self._seek_or_step(-10, -30)),
-            ("Shift+Right", lambda: self._seek_or_step(10, 30)),
-            ("Ctrl+Left", lambda: self._inspection_step(-100)),
-            ("Ctrl+Right", lambda: self._inspection_step(100)),
-            (",", lambda: self._frame_controller.request_step(-1)),
-            (".", lambda: self._frame_controller.request_step(1)),
-            ("M", self._controller.toggle_mute),
-            ("Up", lambda: self._controller.adjust_volume(5)),
-            ("Down", lambda: self._controller.adjust_volume(-5)),
-            ("[", lambda: self._controller.adjust_speed(-0.05)),
-            ("]", lambda: self._controller.adjust_speed(0.05)),
-            ("Backspace", lambda: self._controller.set_speed(1.0)),
-            ("A", self.set_a_action.trigger),
-            ("B", self.set_b_action.trigger),
-            ("R", self.ab_repeat_action.trigger),
-            ("Shift+A", self.seek_a_action.trigger),
-            ("Shift+B", self.seek_b_action.trigger),
-            ("I", self.frame_inspection_action.trigger),
-            ("F", self.fullscreen_action.trigger),
-            ("PgUp", self._play_previous),
-            ("PgDown", self._play_next),
-            ("Escape", self._handle_escape),
+            ("ファイル・表示", "Ctrl+O", "ファイルを開く", "同じ", self.open_files),
+            ("ファイル・表示", "Ctrl+S", "現在フレームを保存", "同じ", self.take_screenshot),
+            ("ファイル・表示", "Ctrl+L", "プレイリスト表示切り替え", "同じ", self.playlist_action.trigger),
+            ("ファイル・表示", "F", "フルスクリーン切り替え", "同じ", self.fullscreen_action.trigger),
+            ("ファイル・表示", "Esc", "フルスクリーン解除", "確認モード解除", self._handle_escape),
+            ("再生", "Space", "再生／一時停止", "同じ", self._controller.toggle_play_pause),
+            ("再生", "Return", "再生／一時停止", "同じ", self._controller.toggle_play_pause),
+            ("再生", "S", "停止して先頭へ戻る", "同じ", self._controller.stop),
+            ("再生", "PgUp", "前のファイル", "同じ", self._play_previous),
+            ("再生", "PgDown", "次のファイル", "同じ", self._play_next),
+            ("シーク・フレーム", "Left", "5秒戻る", "1フレーム戻る", lambda: self._seek_or_step(-1, -5)),
+            ("シーク・フレーム", "Right", "5秒進む", "1フレーム進む", lambda: self._seek_or_step(1, 5)),
+            ("シーク・フレーム", "Shift+Left", "30秒戻る", "10フレーム戻る", lambda: self._seek_or_step(-10, -30)),
+            ("シーク・フレーム", "Shift+Right", "30秒進む", "10フレーム進む", lambda: self._seek_or_step(10, 30)),
+            ("シーク・フレーム", "Ctrl+Left", "—", "100フレーム戻る", lambda: self._inspection_step(-100)),
+            ("シーク・フレーム", "Ctrl+Right", "—", "100フレーム進む", lambda: self._inspection_step(100)),
+            ("シーク・フレーム", ",", "1フレーム戻る", "同じ", lambda: self._frame_controller.request_step(-1)),
+            ("シーク・フレーム", ".", "1フレーム進む", "同じ", lambda: self._frame_controller.request_step(1)),
+            ("シーク・フレーム", "I", "確認モード切り替え", "確認モード解除", self.frame_inspection_action.trigger),
+            ("音量・速度", "M", "ミュート切り替え", "同じ", self._controller.toggle_mute),
+            ("音量・速度", "Up", "音量を5%上げる", "同じ", lambda: self._controller.adjust_volume(5)),
+            ("音量・速度", "Down", "音量を5%下げる", "同じ", lambda: self._controller.adjust_volume(-5)),
+            ("音量・速度", "[", "再生速度を0.05x下げる", "同じ", lambda: self._controller.adjust_speed(-0.05)),
+            ("音量・速度", "]", "再生速度を0.05x上げる", "同じ", lambda: self._controller.adjust_speed(0.05)),
+            ("音量・速度", "Backspace", "再生速度を1.00xへ戻す", "同じ", lambda: self._controller.set_speed(1.0)),
+            ("A-Bリピート", "A", "A点を設定", "同じ", self.set_a_action.trigger),
+            ("A-Bリピート", "B", "B点を設定", "同じ", self.set_b_action.trigger),
+            ("A-Bリピート", "R", "A-Bリピート切り替え", "同じ", self.ab_repeat_action.trigger),
+            ("A-Bリピート", "Shift+A", "A点へ移動", "同じ", self.seek_a_action.trigger),
+            ("A-Bリピート", "Shift+B", "B点へ移動", "同じ", self.seek_b_action.trigger),
         )
-        for key, callback in bindings:
+        self._shortcut_help_entries = [
+            ShortcutHelpEntry(category, key, normal, inspection)
+            for category, key, normal, inspection, _callback in bindings
+        ]
+        for _category, key, _normal, _inspection, callback in bindings:
             shortcut = self._register_shortcut(key, callback)
             if key == "Ctrl+S":
                 self.screenshot_shortcut = shortcut
+
+    def show_shortcut_help(self) -> None:
+        ShortcutDialog(self._shortcut_help_entries, self).exec()
 
     def _register_shortcut(self, key: str, callback) -> QShortcut:
         sequence = QKeySequence(key)
