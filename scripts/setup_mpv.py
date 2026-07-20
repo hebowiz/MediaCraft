@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -10,14 +11,26 @@ import urllib.request
 from pathlib import Path
 
 
-RELEASE_API = "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
+RELEASE_TAG = "20260610"
+RELEASE_API = (
+    "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/tags/"
+    f"{RELEASE_TAG}"
+)
 ASSET_PATTERN = re.compile(r"^mpv-dev-x86_64-\d{8}-git-[^-]+\.7z$")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TARGET_DIRECTORY = PROJECT_ROOT / "vendor" / "mpv"
 
 
-def _request(url: str) -> urllib.request.Request:
-    return urllib.request.Request(url, headers={"User-Agent": "MediaCraft-setup"})
+def _request(url: str, *, authenticated: bool = False) -> urllib.request.Request:
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "MediaCraft-setup",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    token = os.environ.get("GITHUB_TOKEN")
+    if authenticated and token:
+        headers["Authorization"] = f"Bearer {token}"
+    return urllib.request.Request(url, headers=headers)
 
 
 def main() -> int:
@@ -26,7 +39,9 @@ def main() -> int:
         print(f"libmpv is already installed at {installed_dll}")
         return 0
 
-    with urllib.request.urlopen(_request(RELEASE_API), timeout=30) as response:
+    with urllib.request.urlopen(
+        _request(RELEASE_API, authenticated=True), timeout=30
+    ) as response:
         release = json.load(response)
 
     asset = next(

@@ -143,6 +143,22 @@ Pythonを必要としないone-folder形式のアプリが
 実行ログはWindowsのローカルアプリデータ配下にある
 `MediaCraft\logs\mediacraft.log`へ保存され、2 MiBごとに最大3世代まで保持されます。
 
+## リリース
+
+`main`へのpushとPull Requestでは、GitHub ActionsがPython 3.11.9環境で全テストを
+実行します。`pyproject.toml`のバージョンと一致する`v*`タグをpushすると、Windows版の
+テスト、libmpv取得、one-folderビルド、ZIP圧縮、SHA-256生成、GitHub Release作成まで
+自動実行されます。リリース時の主要依存バージョンは`requirements-lock.txt`で固定されます。
+
+```powershell
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+プレリリースタグは`v0.2.0-rc.1`のように指定します。GitHubの「Actions」→
+「Windows Release」→「Run workflow」から手動実行することもできます。既存Releaseに
+対して再実行した場合は、ZIPとSHA-256ファイルを新しいビルドで置き換えます。
+
 ## ライセンス
 
 MediaCraftはGNU General Public License version 3以降（GPL-3.0-or-later）で
