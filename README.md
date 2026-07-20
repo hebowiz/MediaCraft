@@ -106,7 +106,7 @@ mediacraft
 | `PageUp` / `PageDown` | 前／次のファイル |
 | `A` / `B` | 現在位置をA点／B点に設定 |
 | `R` | A-Bリピート切り替え |
-| `Shift+A` / `Shift+B` | A点／B点へ移動 |
+| `Shift+A` / `Shift+B` | A点／B点を解除 |
 | 動画領域でマウスホイール | 音量変更 |
 | `Ctrl+マウスホイール` | 再生速度変更 |
 

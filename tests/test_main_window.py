@@ -525,6 +525,41 @@ def test_ab_repeat_menu_controls_seek_bar_state(qtbot, tmp_path) -> None:
     assert window.control_bar.seek_slider._ab_enabled is True
 
 
+def test_shift_a_and_b_remove_ab_markers(qtbot, tmp_path) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    media_file = tmp_path / "sample.mp4"
+    media_file.touch()
+    window._add_paths([str(media_file)], play_first=True)
+
+    window._controller.seek_absolute(10.0)
+    window.set_a_action.trigger()
+    window._controller.seek_absolute(25.0)
+    window.set_b_action.trigger()
+
+    qtbot.keyClick(
+        window,
+        Qt.Key.Key_A,
+        modifier=Qt.KeyboardModifier.ShiftModifier,
+    )
+    assert window._ab_repeat_controller.point_a is None
+    assert window._ab_repeat_controller.point_b == 25.0
+
+    qtbot.keyClick(
+        window,
+        Qt.Key.Key_B,
+        modifier=Qt.KeyboardModifier.ShiftModifier,
+    )
+    assert window._ab_repeat_controller.point_b is None
+    assert window.seek_a_action.text() == "A点へ移動"
+    assert window.seek_b_action.text() == "B点へ移動"
+    assert "Shift+A" in window.clear_a_action.text()
+    assert "Shift+B" in window.clear_b_action.text()
+
+
 def test_ab_repeat_action_returns_to_unchecked_without_points(qtbot, tmp_path) -> None:
     backend = FakeBackend()
     window = MainWindow(backend)

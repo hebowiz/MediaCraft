@@ -407,21 +407,21 @@ class MainWindow(QMainWindow):
         playback_menu.addAction(self.ab_repeat_action)
 
         playback_menu.addSeparator()
-        self.seek_a_action = QAction("A点へ移動\tShift+A", self)
+        self.seek_a_action = QAction("A点へ移動", self)
         self.seek_a_action.triggered.connect(self._ab_repeat_controller.seek_to_a)
         playback_menu.addAction(self.seek_a_action)
 
-        self.seek_b_action = QAction("B点へ移動\tShift+B", self)
+        self.seek_b_action = QAction("B点へ移動", self)
         self.seek_b_action.triggered.connect(self._ab_repeat_controller.seek_to_b)
         playback_menu.addAction(self.seek_b_action)
 
         playback_menu.addSeparator()
-        clear_a_action = QAction("A点を解除", self)
-        clear_a_action.triggered.connect(self._ab_repeat_controller.clear_point_a)
-        playback_menu.addAction(clear_a_action)
-        clear_b_action = QAction("B点を解除", self)
-        clear_b_action.triggered.connect(self._ab_repeat_controller.clear_point_b)
-        playback_menu.addAction(clear_b_action)
+        self.clear_a_action = QAction("A点を解除\tShift+A", self)
+        self.clear_a_action.triggered.connect(self._ab_repeat_controller.clear_point_a)
+        playback_menu.addAction(self.clear_a_action)
+        self.clear_b_action = QAction("B点を解除\tShift+B", self)
+        self.clear_b_action.triggered.connect(self._ab_repeat_controller.clear_point_b)
+        playback_menu.addAction(self.clear_b_action)
         clear_ab_action = QAction("A-B設定をすべて解除", self)
         clear_ab_action.triggered.connect(self._ab_repeat_controller.clear)
         playback_menu.addAction(clear_ab_action)
@@ -432,8 +432,8 @@ class MainWindow(QMainWindow):
             self.ab_repeat_action,
             self.seek_a_action,
             self.seek_b_action,
-            clear_a_action,
-            clear_b_action,
+            self.clear_a_action,
+            self.clear_b_action,
             clear_ab_action,
         )
         for action in self._ab_media_actions:
@@ -580,8 +580,8 @@ class MainWindow(QMainWindow):
             ("A-Bリピート", "A", "A点を設定", "同じ", self.set_a_action.trigger),
             ("A-Bリピート", "B", "B点を設定", "同じ", self.set_b_action.trigger),
             ("A-Bリピート", "R", "A-Bリピート切り替え", "同じ", self.ab_repeat_action.trigger),
-            ("A-Bリピート", "Shift+A", "A点へ移動", "同じ", self.seek_a_action.trigger),
-            ("A-Bリピート", "Shift+B", "B点へ移動", "同じ", self.seek_b_action.trigger),
+            ("A-Bリピート", "Shift+A", "A点を解除", "同じ", self.clear_a_action.trigger),
+            ("A-Bリピート", "Shift+B", "B点を解除", "同じ", self.clear_b_action.trigger),
         )
         self._shortcut_help_entries = [
             ShortcutHelpEntry(category, key, normal, inspection)
