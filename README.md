@@ -2,8 +2,8 @@
 
 MediaCraftは、フレーム単位の映像確認にも対応するWindows向けデスクトップ動画プレイヤーです。
 
-現在はPhase 6を進行中で、設定画面、ファイルログ、未処理例外保護、
-Windows向けone-folder配布基盤まで実装しています。
+Phase 1～6と初期MVPは完了しています。設定画面、ファイルログ、未処理例外保護、
+Windows向けone-folder配布基盤まで実装済みです。
 
 ## 開発環境
 
@@ -134,10 +134,24 @@ python -m pytest
 Pythonを必要としないone-folder形式のアプリが
 `dist\MediaCraft\MediaCraft.exe`へ生成されます。配布時は`MediaCraft`フォルダ全体を
 コピーしてください。`libmpv-2.dll`とPySide6・PyAVの依存ファイルも同フォルダへ
-収集されます。
+収集されます。`LICENSE`、`THIRD_PARTY_NOTICES.md`、`LICENSES`フォルダも配布物へ
+自動的に同梱されます。これらを削除せず、`MediaCraft`フォルダ全体を配布してください。
 
 ローカルでのビルド、起動、通常終了は検証済みです。正式配布前には、Pythonや
 開発ツールを導入していないクリーンなWindows環境での最終確認を行います。
 
 実行ログはWindowsのローカルアプリデータ配下にある
 `MediaCraft\logs\mediacraft.log`へ保存され、2 MiBごとに最大3世代まで保持されます。
+
+## ライセンス
+
+MediaCraftはGNU General Public License version 3以降（GPL-3.0-or-later）で
+提供します。第三者コンポーネント、各ライセンスおよび対応ソースの案内は
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)を参照してください。
+
+依存関係や配布バイナリを更新した場合は、ライセンス内容を再確認したうえで次を実行し、
+配布用ライセンス全文を更新してください。
+
+```powershell
+.venv\Scripts\python.exe scripts\collect_licenses.py
+```
