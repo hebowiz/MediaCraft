@@ -3,6 +3,7 @@ from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
 from PySide6.QtGui import QImage, QMouseEvent
 from PySide6.QtWidgets import QApplication, QLabel, QStyle, QStyleOptionSlider
 
+from mediacraft.playlist.playlist_controller import RepeatMode
 from mediacraft.ui.control_bar import ControlBar
 
 
@@ -22,10 +23,12 @@ def test_buttons_use_fixed_size_icons(qtbot) -> None:
     qtbot.addWidget(controls)
 
     buttons = (
+        controls.shuffle_button,
         controls.previous_button,
         controls.play_button,
         controls.stop_button,
         controls.next_button,
+        controls.repeat_button,
         controls.frame_back_button,
         controls.frame_forward_button,
         controls.mute_button,
@@ -45,6 +48,43 @@ def test_buttons_use_fixed_size_icons(qtbot) -> None:
     assert "速度" not in {label.text() for label in controls.findChildren(QLabel)}
     for button in buttons:
         assert_icon_is_white(button)
+
+
+def test_shuffle_and_repeat_buttons_emit_and_show_current_modes(qtbot) -> None:
+    controls = ControlBar()
+    qtbot.addWidget(controls)
+
+    with qtbot.waitSignal(controls.shuffle_requested):
+        qtbot.mouseClick(controls.shuffle_button, Qt.MouseButton.LeftButton)
+    with qtbot.waitSignal(controls.repeat_requested):
+        qtbot.mouseClick(controls.repeat_button, Qt.MouseButton.LeftButton)
+
+    controls.set_shuffle(True)
+    assert controls.shuffle_button.isChecked()
+    assert controls.shuffle_button.accessibleName() == "シャッフル再生: ON"
+
+    controls.set_repeat_mode(RepeatMode.ALL)
+    assert controls.repeat_button.isChecked()
+    assert controls.repeat_button.accessibleName() == "リピート再生: ON"
+    assert_icon_is_white(controls.repeat_button)
+
+    controls.set_repeat_mode(RepeatMode.ONE)
+    assert controls.repeat_button.accessibleName() == "1ファイルリピート"
+    repeat_one_image = controls.repeat_button.icon().pixmap(
+        controls.repeat_button.iconSize()
+    ).toImage()
+    repeat_one_colors = {
+        repeat_one_image.pixelColor(x, y).getRgb()[:3]
+        for y in range(repeat_one_image.height())
+        for x in range(repeat_one_image.width())
+        if repeat_one_image.pixelColor(x, y).alpha() > 0
+    }
+    assert (255, 255, 255) in repeat_one_colors
+    assert any(max(color) <= 80 for color in repeat_one_colors)
+
+    controls.set_repeat_mode(RepeatMode.OFF)
+    assert not controls.repeat_button.isChecked()
+    assert controls.repeat_button.accessibleName() == "リピート再生: OFF"
 
 
 def test_frame_inspection_shows_precision_and_simplifies_controls(qtbot) -> None:

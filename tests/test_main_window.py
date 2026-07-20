@@ -4,6 +4,7 @@ from PySide6.QtGui import QAction, QKeySequence, QMouseEvent
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog
 
 from mediacraft.player.playback_state import PlaybackState
+from mediacraft.playlist.playlist_controller import RepeatMode
 from mediacraft.ui.main_window import MainWindow
 
 
@@ -457,6 +458,32 @@ def test_playlist_end_selects_first_item_and_stops(qtbot, tmp_path) -> None:
     assert window._playlist_controller.current_index == 0
     assert window.playlist_panel.list_widget.currentRow() == 0
     assert window.control_bar.play_button.accessibleName() == "再生"
+
+
+def test_playlist_repeat_modes_continue_playback_on_media_end(qtbot, tmp_path) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    first = tmp_path / "first.mp4"
+    second = tmp_path / "second.mp4"
+    first.touch()
+    second.touch()
+    window._add_paths([str(first), str(second)], play_first=True)
+    window._play_next()
+
+    window._playlist_controller.set_repeat_mode(RepeatMode.ALL)
+    backend.ended = True
+    window._controller.refresh()
+    assert backend.loaded_path == first.resolve()
+    assert not backend.paused
+
+    window._playlist_controller.set_repeat_mode(RepeatMode.ONE)
+    backend.ended = True
+    window._controller.refresh()
+    assert backend.loaded_path == first.resolve()
+    assert not backend.paused
 
 
 def test_removing_playing_item_loads_remaining_item_and_stops(qtbot, tmp_path) -> None:

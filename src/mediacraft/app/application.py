@@ -33,6 +33,10 @@ QPushButton:hover, QComboBox:hover {
 QPushButton:pressed {
     background-color: #4776a8;
 }
+QPushButton:checked {
+    background-color: #4776a8;
+    border-color: #6ca6dc;
+}
 QSlider::groove:horizontal {
     background: #3a3f49;
     height: 5px;

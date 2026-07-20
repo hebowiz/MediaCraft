@@ -1,5 +1,5 @@
-from PySide6.QtCore import QPoint, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtCore import QPoint, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -10,15 +10,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from mediacraft.playlist.playlist_controller import RepeatMode
 from mediacraft.ui.direct_slider import DirectSlider
 from mediacraft.utils.time_format import format_time, format_time_millis
 
 
 class ControlBar(QWidget):
+    shuffle_requested = Signal()
     previous_requested = Signal()
     play_pause_requested = Signal()
     stop_requested = Signal()
     next_requested = Signal()
+    repeat_requested = Signal()
     frame_back_requested = Signal()
     frame_forward_requested = Signal()
     seek_requested = Signal(float)
@@ -51,10 +54,12 @@ class ControlBar(QWidget):
         self.seek_slider.hover_value_changed.connect(self._on_seek_hovered)
         self.seek_slider.hover_left.connect(self.seek_hover_left.emit)
 
+        self.shuffle_button = QPushButton()
         self.previous_button = QPushButton()
         self.play_button = QPushButton()
         self.stop_button = QPushButton()
         self.next_button = QPushButton()
+        self.repeat_button = QPushButton()
         self.frame_back_button = QPushButton()
         self.frame_forward_button = QPushButton()
         self.time_label = QLabel("00:00:00 / 00:00:00")
@@ -75,6 +80,12 @@ class ControlBar(QWidget):
         self.volume_label = QLabel("100%")
         self.fullscreen_button = QPushButton()
 
+        self._configure_custom_icon_button(
+            self.shuffle_button,
+            self._shuffle_icon(),
+            "シャッフル再生: OFF",
+        )
+        self.shuffle_button.setCheckable(True)
         self._configure_icon_button(
             self.previous_button,
             QStyle.StandardPixmap.SP_MediaSkipBackward,
@@ -95,6 +106,12 @@ class ControlBar(QWidget):
             QStyle.StandardPixmap.SP_MediaSkipForward,
             "次のファイル",
         )
+        self._configure_custom_icon_button(
+            self.repeat_button,
+            self._repeat_icon(one=False),
+            "リピート再生: OFF",
+        )
+        self.repeat_button.setCheckable(True)
         self._configure_custom_icon_button(
             self.frame_back_button,
             self._frame_step_icon(forward=False),
@@ -117,10 +134,12 @@ class ControlBar(QWidget):
         )
 
         transport_row = QHBoxLayout()
+        transport_row.addWidget(self.shuffle_button)
         transport_row.addWidget(self.previous_button)
         transport_row.addWidget(self.play_button)
         transport_row.addWidget(self.stop_button)
         transport_row.addWidget(self.next_button)
+        transport_row.addWidget(self.repeat_button)
         transport_row.addWidget(self.frame_back_button)
         transport_row.addWidget(self.frame_forward_button)
         transport_row.addWidget(self.time_label)
@@ -137,10 +156,12 @@ class ControlBar(QWidget):
         layout.addWidget(self.seek_slider)
         layout.addLayout(transport_row)
 
+        self.shuffle_button.clicked.connect(self.shuffle_requested.emit)
         self.previous_button.clicked.connect(self.previous_requested.emit)
         self.play_button.clicked.connect(self.play_pause_requested.emit)
         self.stop_button.clicked.connect(self.stop_requested.emit)
         self.next_button.clicked.connect(self.next_requested.emit)
+        self.repeat_button.clicked.connect(self.repeat_requested.emit)
         self.frame_back_button.clicked.connect(self.frame_back_requested.emit)
         self.frame_forward_button.clicked.connect(self.frame_forward_requested.emit)
         self.volume_slider.valueChanged.connect(self.volume_requested.emit)
@@ -213,6 +234,24 @@ class ControlBar(QWidget):
         self.play_button.setIcon(self._white_standard_icon(icon))
         self.play_button.setToolTip(label)
         self.play_button.setAccessibleName(label)
+
+    def set_shuffle(self, enabled: bool) -> None:
+        label = f"シャッフル再生: {'ON' if enabled else 'OFF'}"
+        self.shuffle_button.setChecked(enabled)
+        self.shuffle_button.setToolTip(label)
+        self.shuffle_button.setAccessibleName(label)
+
+    def set_repeat_mode(self, mode: RepeatMode) -> None:
+        if mode is RepeatMode.ALL:
+            label = "リピート再生: ON"
+        elif mode is RepeatMode.ONE:
+            label = "1ファイルリピート"
+        else:
+            label = "リピート再生: OFF"
+        self.repeat_button.setChecked(mode is not RepeatMode.OFF)
+        self.repeat_button.setIcon(self._repeat_icon(one=mode is RepeatMode.ONE))
+        self.repeat_button.setToolTip(label)
+        self.repeat_button.setAccessibleName(label)
 
     def set_volume(self, volume: int, muted: bool) -> None:
         self.volume_slider.blockSignals(True)
@@ -309,6 +348,64 @@ class ControlBar(QWidget):
             painter.drawLine(3, 10, 9, 10)
             painter.drawLine(3, 10, 6, 7)
             painter.drawLine(3, 10, 6, 13)
+        painter.end()
+        return QIcon(pixmap)
+
+    @staticmethod
+    def _shuffle_icon() -> QIcon:
+        pixmap = QPixmap(20, 20)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen = QPen(QColor(255, 255, 255), 2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.drawLine(3, 5, 6, 5)
+        painter.drawLine(6, 5, 14, 15)
+        painter.drawLine(14, 15, 17, 15)
+        painter.drawLine(14, 12, 17, 15)
+        painter.drawLine(14, 18, 17, 15)
+        painter.drawLine(3, 15, 6, 15)
+        painter.drawLine(6, 15, 14, 5)
+        painter.drawLine(14, 5, 17, 5)
+        painter.drawLine(14, 2, 17, 5)
+        painter.drawLine(14, 8, 17, 5)
+        painter.end()
+        return QIcon(pixmap)
+
+    @staticmethod
+    def _repeat_icon(*, one: bool) -> QIcon:
+        pixmap = QPixmap(20, 20)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen = QPen(QColor(255, 255, 255), 2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.drawLine(4, 6, 15, 6)
+        painter.drawLine(12, 3, 15, 6)
+        painter.drawLine(12, 9, 15, 6)
+        painter.drawLine(15, 6, 17, 8)
+        painter.drawLine(17, 8, 17, 11)
+        painter.drawLine(16, 14, 5, 14)
+        painter.drawLine(8, 11, 5, 14)
+        painter.drawLine(8, 17, 5, 14)
+        painter.drawLine(5, 14, 3, 12)
+        painter.drawLine(3, 12, 3, 9)
+        if one:
+            badge_rect = QRectF(9, 9, 10, 10)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(255, 255, 255))
+            painter.drawEllipse(badge_rect)
+
+            font = QFont(painter.font())
+            font.setBold(True)
+            font.setPixelSize(9)
+            painter.setFont(font)
+            painter.setPen(QColor(0, 0, 0))
+            painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, "1")
         painter.end()
         return QIcon(pixmap)
 

@@ -471,6 +471,8 @@ class MainWindow(QMainWindow):
         controls.play_pause_requested.connect(self._controller.toggle_play_pause)
         controls.stop_requested.connect(self._controller.stop)
         controls.next_requested.connect(self._play_next)
+        controls.shuffle_requested.connect(self._playlist_controller.toggle_shuffle)
+        controls.repeat_requested.connect(self._playlist_controller.cycle_repeat_mode)
         controls.frame_back_requested.connect(lambda: self._frame_controller.request_step(-1))
         controls.frame_forward_requested.connect(lambda: self._frame_controller.request_step(1))
         controls.seek_requested.connect(self._controller.seek_absolute)
@@ -508,6 +510,8 @@ class MainWindow(QMainWindow):
             self._on_current_playlist_item_removed
         )
         self._playlist_controller.cleared.connect(self._reset_media_view)
+        self._playlist_controller.shuffle_changed.connect(controls.set_shuffle)
+        self._playlist_controller.repeat_mode_changed.connect(controls.set_repeat_mode)
         self._playlist_metadata_probe.duration_ready.connect(
             self._playlist_controller.update_duration
         )
@@ -618,7 +622,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("プレイリストの末尾です。", 2000)
 
     def _on_media_ended(self, _path: str) -> None:
-        if self._playlist_controller.play_next():
+        if self._playlist_controller.play_next(automatic=True):
             return
         if self._playlist_controller.entries:
             self._playlist_controller.request_play(0)
