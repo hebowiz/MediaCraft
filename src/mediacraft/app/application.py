@@ -1,9 +1,11 @@
-import logging
 import sys
+from pathlib import Path
 
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from mediacraft.ui.main_window import MainWindow
+from mediacraft.app.logging_config import configure_logging, install_exception_hook
 
 
 DARK_STYLESHEET = """
@@ -47,23 +49,24 @@ QSlider::sub-page:horizontal {
 }
 """
 
+APP_ICON_PATH = Path(__file__).resolve().parents[1] / "assets" / "mediacraft.ico"
+
 
 def create_application(argv: list[str] | None = None) -> QApplication:
     app = QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName("MediaCraft")
     app.setApplicationDisplayName("MediaCraft")
     app.setOrganizationName("MediaCraft")
+    app.setWindowIcon(QIcon(str(APP_ICON_PATH)))
     app.setStyle("Fusion")
     app.setStyleSheet(DARK_STYLESHEET)
     return app
 
 
 def run() -> int:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
     app = create_application()
+    configure_logging()
+    install_exception_hook()
     window = MainWindow()
     window.show()
     return app.exec()

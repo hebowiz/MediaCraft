@@ -4,7 +4,6 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QObject, QPoint, QSignalBlocker, QTimer, Qt
 from PySide6.QtGui import (
     QAction,
-    QActionGroup,
     QCloseEvent,
     QDragEnterEvent,
     QDropEvent,
@@ -16,6 +15,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
     QFileDialog,
     QMainWindow,
     QSplitter,
@@ -38,6 +38,7 @@ from mediacraft.thumbnail.thumbnail_provider import ThumbnailProvider
 from mediacraft.ui.control_bar import ControlBar
 from mediacraft.ui.fullscreen_overlay import FullscreenOverlay
 from mediacraft.ui.playlist_panel import PlaylistPanel
+from mediacraft.ui.settings_dialog import SettingsDialog
 from mediacraft.ui.thumbnail_preview import ThumbnailPreview
 from mediacraft.ui.toast_notification import ToastNotification
 from mediacraft.ui.video_widget import VideoWidget
@@ -81,6 +82,7 @@ class MainWindow(QMainWindow):
         self._thumbnail_request_key: int | None = None
         self._media_fps = 0.0
         self._media_variable_rate: bool | None = None
+        self._thumbnail_preload_enabled = self._settings.thumbnail_preload_enabled()
 
         self.video_widget = VideoWidget()
         self.control_bar = ControlBar()
@@ -228,16 +230,6 @@ class MainWindow(QMainWindow):
             return
         logger.info("Screenshot requested: %s", output_path)
         self._show_toast(f"スクリーンショットを保存しました\n{output_path.name}")
-
-    def choose_screenshot_directory(self) -> None:
-        path = QFileDialog.getExistingDirectory(
-            self,
-            "スクリーンショット保存先を選択",
-            self._settings.screenshot_directory(),
-        )
-        if path:
-            self._settings.set_screenshot_directory(path)
-            self.statusBar().showMessage(f"スクリーンショット保存先: {path}", 4000)
 
     def toggle_fullscreen(self) -> None:
         if self.isFullScreen():
@@ -388,28 +380,15 @@ class MainWindow(QMainWindow):
         self.screenshot_action.triggered.connect(self.take_screenshot)
         file_menu.addAction(self.screenshot_action)
 
-        screenshot_directory_action = QAction("スクリーンショット保存先を設定...", self)
-        screenshot_directory_action.triggered.connect(self.choose_screenshot_directory)
-        file_menu.addAction(screenshot_directory_action)
-
-        screenshot_format_menu = file_menu.addMenu("スクリーンショット形式")
-        self._screenshot_format_group = QActionGroup(self)
-        self._screenshot_format_group.setExclusive(True)
-        selected_format = self._settings.screenshot_format()
-        for label, image_format in (("PNG", "png"), ("JPEG", "jpeg")):
-            action = QAction(label, self)
-            action.setCheckable(True)
-            action.setChecked(image_format == selected_format)
-            action.triggered.connect(
-                lambda _checked=False, value=image_format: self._set_screenshot_format(value)
-            )
-            self._screenshot_format_group.addAction(action)
-            screenshot_format_menu.addAction(action)
-
         file_menu.addSeparator()
         exit_action = QAction("終了", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
+
+        settings_menu = self.menuBar().addMenu("設定")
+        preferences_action = QAction("MediaCraftの設定...", self)
+        preferences_action.triggered.connect(self.open_settings)
+        settings_menu.addAction(preferences_action)
 
         playback_menu = self.menuBar().addMenu("再生")
         self.set_a_action = QAction("A点を設定\tA", self)
@@ -731,7 +710,8 @@ class MainWindow(QMainWindow):
             )
 
     def _start_thumbnail_preload(self, _position: float, duration: float) -> None:
-        self._thumbnail_provider.start_preload(duration)
+        if self._thumbnail_preload_enabled:
+            self._thumbnail_provider.start_preload(duration)
 
     def _on_thumbnail_ready(
         self,
@@ -802,11 +782,26 @@ class MainWindow(QMainWindow):
         if shortcut is not None:
             shortcut.setEnabled(enabled)
 
-    def _set_screenshot_format(self, image_format: str) -> None:
-        self._settings.set_screenshot_format(image_format)
-        self.statusBar().showMessage(
-            f"スクリーンショット形式: {image_format.upper()}", 2500
+    def open_settings(self) -> None:
+        dialog = SettingsDialog(
+            self._settings.screenshot_directory(),
+            self._settings.screenshot_format(),
+            self._thumbnail_preload_enabled,
+            self,
         )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        self._settings.set_screenshot_directory(dialog.screenshot_directory)
+        self._settings.set_screenshot_format(dialog.screenshot_format)
+        self._settings.set_thumbnail_preload_enabled(dialog.thumbnail_preload_enabled)
+        self._thumbnail_preload_enabled = dialog.thumbnail_preload_enabled
+
+        if self._thumbnail_preload_enabled:
+            self._thumbnail_provider.start_preload(self._controller.duration)
+        else:
+            self._thumbnail_provider.cancel_preload()
+        self.statusBar().showMessage("設定を保存しました。", 3000)
 
     def _set_fullscreen_cursor_hidden(self, hidden: bool) -> None:
         if hidden:

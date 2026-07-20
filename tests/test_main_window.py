@@ -1,7 +1,7 @@
 from conftest import FakeBackend
 from PySide6.QtCore import QPointF, QEvent, Qt
 from PySide6.QtGui import QAction, QKeySequence, QMouseEvent
-from PySide6.QtWidgets import QApplication, QFileDialog
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog
 
 from mediacraft.player.playback_state import PlaybackState
 from mediacraft.ui.main_window import MainWindow
@@ -27,9 +27,67 @@ def test_window_initializes_backend_and_controls(qtbot) -> None:
         shortcut.context() is Qt.ShortcutContext.ApplicationShortcut
         for shortcut in window._shortcuts
     )
+    assert "設定" in {action.text() for action in window.menuBar().actions()}
 
     window.close()
     assert backend.shutdown_called
+
+
+def test_settings_dialog_updates_runtime_preferences(qtbot, monkeypatch, tmp_path) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+
+    class AcceptedSettingsDialog:
+        screenshot_directory = str(tmp_path / "captures")
+        screenshot_format = "jpeg"
+        thumbnail_preload_enabled = False
+
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def exec(self):
+            return QDialog.DialogCode.Accepted
+
+    cancelled = False
+
+    def cancel_preload() -> None:
+        nonlocal cancelled
+        cancelled = True
+
+    monkeypatch.setattr(
+        "mediacraft.ui.main_window.SettingsDialog",
+        AcceptedSettingsDialog,
+    )
+    monkeypatch.setattr(window._thumbnail_provider, "cancel_preload", cancel_preload)
+    saved: dict[str, object] = {}
+    monkeypatch.setattr(
+        window._settings,
+        "set_screenshot_directory",
+        lambda value: saved.__setitem__("directory", value),
+    )
+    monkeypatch.setattr(
+        window._settings,
+        "set_screenshot_format",
+        lambda value: saved.__setitem__("format", value),
+    )
+    monkeypatch.setattr(
+        window._settings,
+        "set_thumbnail_preload_enabled",
+        lambda value: saved.__setitem__("preload", value),
+    )
+
+    window.open_settings()
+
+    assert saved == {
+        "directory": str(tmp_path / "captures"),
+        "format": "jpeg",
+        "preload": False,
+    }
+    assert not window._thumbnail_preload_enabled
+    assert cancelled
 
 
 def test_fullscreen_uses_mouse_activated_overlay(qtbot, tmp_path) -> None:

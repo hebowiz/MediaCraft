@@ -2,7 +2,8 @@
 
 MediaCraftは、フレーム単位の映像確認にも対応するWindows向けデスクトップ動画プレイヤーです。
 
-現在はPhase 5のシークバー・サムネイルプレビューまで実装しています。
+現在はPhase 6を進行中で、設定画面、ファイルログ、未処理例外保護、
+Windows向けone-folder配布基盤まで実装しています。
 
 ## 開発環境
 
@@ -72,6 +73,9 @@ mediacraft
 - フルスクリーン再生中の操作UI・マウスカーソル自動非表示
 - バックグラウンド解析によるプレイリスト再生時間表示
 - ウィンドウ位置、音量、ミュート、再生速度の保存
+- 設定画面によるスクリーンショット・サムネイル先読み設定
+- ローテーション付きファイルログと未処理例外の記録
+- アプリ内の再生ボタンを基調にしたMediaCraftアイコン
 
 ## 主な操作
 
@@ -109,3 +113,28 @@ mediacraft
 ```powershell
 python -m pytest
 ```
+
+## Windows向けビルド
+
+開発依存関係とlibmpvを準備した後、PowerShellで次を実行します。
+
+```powershell
+.\scripts\build_windows.ps1
+```
+
+アイコンのSVGを変更した場合は、ビルド前に次を実行してマルチサイズICOを再生成します。
+
+```powershell
+.venv\Scripts\python.exe scripts\generate_icon.py
+```
+
+Pythonを必要としないone-folder形式のアプリが
+`dist\MediaCraft\MediaCraft.exe`へ生成されます。配布時は`MediaCraft`フォルダ全体を
+コピーしてください。`libmpv-2.dll`とPySide6・PyAVの依存ファイルも同フォルダへ
+収集されます。
+
+ローカルでのビルド、起動、通常終了は検証済みです。正式配布前には、Pythonや
+開発ツールを導入していないクリーンなWindows環境での最終確認を行います。
+
+実行ログはWindowsのローカルアプリデータ配下にある
+`MediaCraft\logs\mediacraft.log`へ保存され、2 MiBごとに最大3世代まで保持されます。

@@ -70,3 +70,9 @@ class AppSettings:
         if value not in {"png", "jpeg"}:
             raise ValueError(f"未対応のスクリーンショット形式です: {image_format}")
         self._settings.setValue("screenshot/format", value)
+
+    def thumbnail_preload_enabled(self) -> bool:
+        return self._settings.value("thumbnail/preload_enabled", True, type=bool)
+
+    def set_thumbnail_preload_enabled(self, enabled: bool) -> None:
+        self._settings.setValue("thumbnail/preload_enabled", enabled)

@@ -317,6 +317,15 @@ class ThumbnailProvider(QObject):
         )
         self._thread_pool.start(task, -1)
 
+    def cancel_preload(self, *, clear_cache: bool = True) -> None:
+        self._preload_started = False
+        if self._preload_task is not None:
+            self._preload_task.cancel()
+            self._thread_pool.tryTake(self._preload_task)
+            self._preload_task = None
+        if clear_cache:
+            self._coarse_cache.clear()
+
     def shutdown(self) -> None:
         self._generation += 1
         if self._preload_task is not None:

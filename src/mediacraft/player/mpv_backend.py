@@ -191,11 +191,14 @@ class MpvBackend(PlayerBackend):
             return
 
         project_root = Path(__file__).resolve().parents[3]
-        candidates = (
+        candidates = [
             project_root / "vendor" / "mpv",
             Path(sys.executable).resolve().parent,
             Path(sys.executable).resolve().parent / "mpv",
-        )
+        ]
+        bundle_root = getattr(sys, "_MEIPASS", None)
+        if bundle_root:
+            candidates.insert(0, Path(bundle_root))
         for directory in candidates:
             if not (directory / "libmpv-2.dll").is_file():
                 continue
