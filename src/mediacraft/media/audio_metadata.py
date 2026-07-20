@@ -7,6 +7,7 @@ from av.error import FFmpegError
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
 from PySide6.QtGui import QImage
 
+from mediacraft.media.codec_names import display_codec_name
 from mediacraft.thumbnail.thumbnail_provider import frame_to_image
 
 
@@ -16,6 +17,7 @@ class AudioMetadata:
     artist: str = ""
     album: str = ""
     bitrate_kbps: int | None = None
+    codec: str = ""
     artwork: QImage | None = None
 
 
@@ -148,6 +150,9 @@ def read_audio_metadata(path: str | Path) -> AudioMetadata:
             ),
             album=_first_value(metadata, "album", "albumtitle", "wmalbumtitle"),
             bitrate_kbps=round(bit_rate / 1000) if bit_rate is not None else None,
+            codec=display_codec_name(
+                getattr(getattr(audio_stream, "codec_context", None), "name", "")
+            ),
             artwork=artwork,
         )
 

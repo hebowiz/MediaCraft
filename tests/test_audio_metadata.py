@@ -7,12 +7,15 @@ from mediacraft.media.audio_metadata import (
 
 
 class FakeStream:
-    def __init__(self, stream_type: str, *, metadata=None, bit_rate=None) -> None:
+    def __init__(
+        self, stream_type: str, *, metadata=None, bit_rate=None, codec_name=""
+    ) -> None:
         self.type = stream_type
         self.metadata = dict(metadata or {})
         self.bit_rate = bit_rate
         self.duration = None
         self.time_base = None
+        self.codec_context = type("CodecContext", (), {"name": codec_name})()
 
 
 class FakeContainer:
@@ -57,6 +60,7 @@ def test_audio_metadata_normalizes_common_tag_names_and_artwork(
         "audio",
         metadata={"PERFORMER": "Track Artist", "WM/AlbumTitle": "Album Name"},
         bit_rate=256_000,
+        codec_name="aac",
     )
     container = FakeContainer(
         [audio_stream, FakeStream("video")],
@@ -78,6 +82,7 @@ def test_audio_metadata_normalizes_common_tag_names_and_artwork(
     assert metadata.artist == "Track Artist"
     assert metadata.album == "Album Name"
     assert metadata.bitrate_kbps == 256
+    assert metadata.codec == "AAC"
     assert metadata.artwork is artwork
 
 
@@ -98,4 +103,5 @@ def test_audio_metadata_estimates_bitrate_from_file_size(tmp_path, monkeypatch) 
     assert metadata.artist == ""
     assert metadata.album == ""
     assert metadata.bitrate_kbps == 8
+    assert metadata.codec == ""
     assert metadata.artwork is None

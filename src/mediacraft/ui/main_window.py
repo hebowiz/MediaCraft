@@ -558,6 +558,7 @@ class MainWindow(QMainWindow):
         )
         self._frame_controller.frame_display_changed.connect(controls.set_frame_info)
         self._media_probe.analysis_ready.connect(self._on_media_analysis)
+        self._media_probe.codecs_ready.connect(self._on_media_codecs)
         self._audio_metadata_probe.metadata_ready.connect(self._on_audio_metadata)
         self._thumbnail_provider.thumbnail_ready.connect(self._on_thumbnail_ready)
         self._thumbnail_provider.coarse_thumbnail_ready.connect(
@@ -720,6 +721,14 @@ class MainWindow(QMainWindow):
         self._media_variable_rate = variable_rate
         self._frame_controller.set_frame_rate_analysis(fps, variable_rate)
 
+    def _on_media_codecs(
+        self, path: str, video_codec: str, audio_codec: str
+    ) -> None:
+        current_file = self._controller.current_file
+        if current_file is None or Path(path).resolve() != current_file:
+            return
+        self.control_bar.set_codecs(video_codec, audio_codec)
+
     def _on_media_changed(self, path: str) -> None:
         media_path = Path(path)
         self._audio_mode = media_path.suffix.lower() in self.AUDIO_EXTENSIONS
@@ -758,6 +767,7 @@ class MainWindow(QMainWindow):
             artist=metadata.artist,
             album=metadata.album,
             bitrate_kbps=metadata.bitrate_kbps,
+            codec=metadata.codec,
             artwork=metadata.artwork,
         )
 

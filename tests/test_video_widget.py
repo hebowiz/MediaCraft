@@ -54,9 +54,9 @@ def test_audio_file_uses_metadata_panel(qtbot) -> None:
     assert widget._audio_panel.isVisibleTo(widget)
     assert not widget._placeholder.isVisibleTo(widget)
     assert widget._audio_title.text() == "music & voice"
-    assert widget._audio_artist.text() == "アーティスト: —"
-    assert widget._audio_album.text() == "アルバム: —"
-    assert widget._audio_bitrate.text() == "ビットレート: —"
+    assert widget._audio_artist.text() == "Artist: —"
+    assert widget._audio_album.text() == "Album: —"
+    assert widget._audio_bitrate.text() == "Codec: — / Bitrate: —"
     assert widget._audio_artwork.pixmap().isNull()
 
     widget.set_media_loaded(False)
@@ -78,13 +78,14 @@ def test_audio_metadata_and_artwork_are_displayed(qtbot) -> None:
         artist="Track Artist",
         album="Album Name",
         bitrate_kbps=1411,
+        codec="flac",
         artwork=artwork,
     )
 
     assert widget._audio_title.text() == "Track Title"
-    assert widget._audio_artist.text() == "アーティスト: Track Artist"
-    assert widget._audio_album.text() == "アルバム: Album Name"
-    assert widget._audio_bitrate.text() == "ビットレート: 1,411 kbps"
+    assert widget._audio_artist.text() == "Artist: Track Artist"
+    assert widget._audio_album.text() == "Album: Album Name"
+    assert widget._audio_bitrate.text() == "Codec: flac / Bitrate: 1,411 kbps"
     assert not widget._audio_artwork.pixmap().isNull()
     assert widget._audio_artwork.width() > 420
     assert widget._audio_artwork.height() == widget._audio_artwork.width()

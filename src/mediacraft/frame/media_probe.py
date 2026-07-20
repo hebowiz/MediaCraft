@@ -5,6 +5,7 @@ from av.error import FFmpegError
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal
 
 from mediacraft.media.avi_info import inspect_avi
+from mediacraft.media.codec_names import display_codec_name
 
 
 def detect_variable_frame_rate(timestamps: list[float]) -> bool | None:
@@ -25,6 +26,7 @@ def detect_variable_frame_rate(timestamps: list[float]) -> bool | None:
 
 class ProbeSignals(QObject):
     finished = Signal(str, float, object)
+    codecs_finished = Signal(str, str, str)
 
 
 class ProbeTask(QRunnable):
@@ -39,9 +41,25 @@ class ProbeTask(QRunnable):
     def run(self) -> None:
         fps = 0.0
         variable: bool | None = None
+        video_codec = ""
+        audio_codec = ""
+        codecs_emitted = False
         try:
             with av.open(self.path) as container:
                 stream = next(stream for stream in container.streams if stream.type == "video")
+                video_codec = display_codec_name(
+                    getattr(getattr(stream, "codec_context", None), "name", "")
+                )
+                audio_stream = next(
+                    (item for item in container.streams if item.type == "audio"), None
+                )
+                audio_codec = display_codec_name(
+                    getattr(getattr(audio_stream, "codec_context", None), "name", "")
+                )
+                self.signals.codecs_finished.emit(
+                    self.path, video_codec, audio_codec
+                )
+                codecs_emitted = True
                 average_rate = stream.average_rate or stream.guessed_rate
                 fps = float(average_rate) if average_rate is not None else 0.0
 
@@ -65,11 +83,14 @@ class ProbeTask(QRunnable):
                             fps = 1.0 / median_interval
         except (FFmpegError, OSError, StopIteration, ValueError):
             pass
+        if not codecs_emitted:
+            self.signals.codecs_finished.emit(self.path, video_codec, audio_codec)
         self.signals.finished.emit(self.path, fps, variable)
 
 
 class MediaProbe(QObject):
     analysis_ready = Signal(str, float, object)
+    codecs_ready = Signal(str, str, str)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -84,6 +105,10 @@ class MediaProbe(QObject):
                 0,
                 lambda: self.analysis_ready.emit(path, avi_info.frame_rate, False),
             )
+            QTimer.singleShot(
+                0,
+                lambda: self.codecs_ready.emit(path, "AMV4", ""),
+            )
             return
         for pending in tuple(self._tasks):
             if self._thread_pool.tryTake(pending):
@@ -95,6 +120,7 @@ class MediaProbe(QObject):
                 current, result_path, fps, variable
             )
         )
+        task.signals.codecs_finished.connect(self.codecs_ready.emit)
         self._thread_pool.start(task)
 
     def shutdown(self) -> None:

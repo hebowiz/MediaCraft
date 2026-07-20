@@ -96,7 +96,7 @@ def test_frame_inspection_shows_precision_and_simplifies_controls(qtbot) -> None
     controls.set_frame_inspection(True)
     controls.set_position(1.234, 10.0)
 
-    assert controls.frame_label.text() == "Frame: 1,234 | VFR"
+    assert controls.frame_label.text() == "Frame: 1,234 | VFR | V: — / A: —"
     assert controls.time_label.text() == "00:00:01.234 / 00:00:10.000"
     assert not hasattr(controls, "frame_mode_button")
     assert not controls.speed_combo.isVisible()
@@ -112,10 +112,13 @@ def test_cfr_frame_rate_is_displayed_as_fps(qtbot) -> None:
     qtbot.addWidget(controls)
 
     controls.set_frame_info(90, False, 60.0, False)
-    assert controls.frame_label.text() == "Frame: 90 | 60.00 FPS"
+    assert controls.frame_label.text() == "Frame: 90 | 60.00 FPS | V: — / A: —"
+
+    controls.set_codecs("H.264", "AAC")
+    assert controls.frame_label.text() == "Frame: 90 | 60.00 FPS | V: H.264 / A: AAC"
 
     controls.set_frame_info(-1, True, 0.0, None)
-    assert controls.frame_label.text() == "Frame: -- | -- FPS"
+    assert controls.frame_label.text() == "Frame: -- | -- FPS | V: H.264 / A: AAC"
 
 
 def test_audio_mode_disables_frame_controls(qtbot) -> None:
@@ -131,7 +134,7 @@ def test_audio_mode_disables_frame_controls(qtbot) -> None:
 
     controls.set_audio_mode(False)
 
-    assert controls.frame_label.text() == "Frame: -- | -- FPS"
+    assert controls.frame_label.text() == "Frame: -- | -- FPS | V: — / A: —"
     assert controls.frame_back_button.isEnabled()
     assert controls.frame_forward_button.isEnabled()
 

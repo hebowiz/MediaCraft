@@ -138,6 +138,7 @@ class VideoWidget(QFrame):
             artist="",
             album="",
             bitrate_kbps=None,
+            codec="",
             artwork=None,
         )
 
@@ -148,13 +149,14 @@ class VideoWidget(QFrame):
         artist: str,
         album: str,
         bitrate_kbps: int | None,
+        codec: str,
         artwork: QImage | None,
     ) -> None:
         self._audio_title.setText(title or "—")
-        self._audio_artist.setText(f"アーティスト: {artist or '—'}")
-        self._audio_album.setText(f"アルバム: {album or '—'}")
+        self._audio_artist.setText(f"Artist: {artist or '—'}")
+        self._audio_album.setText(f"Album: {album or '—'}")
         bitrate = f"{bitrate_kbps:,} kbps" if bitrate_kbps is not None else "—"
-        self._audio_bitrate.setText(f"ビットレート: {bitrate}")
+        self._audio_bitrate.setText(f"Codec: {codec or '—'} / Bitrate: {bitrate}")
         self._audio_artwork.set_image(artwork)
         self._resize_audio_artwork()
 

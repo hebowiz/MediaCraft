@@ -40,6 +40,11 @@ class ControlBar(QWidget):
         self._seeking = False
         self._frame_inspection = False
         self._audio_mode = False
+        self._video_codec = ""
+        self._audio_codec = ""
+        self._frame_number = -1
+        self._fps = 0.0
+        self._variable_rate: object = None
         self._ab_start: float | None = None
         self._ab_end: float | None = None
         self._ab_enabled = False
@@ -214,18 +219,41 @@ class ControlBar(QWidget):
         if self._audio_mode:
             self.frame_label.setText("Audio")
             return
-        frame_text = "--" if frame_number < 0 else f"{frame_number:,}"
-        if variable is True:
+        self._frame_number = frame_number
+        self._fps = fps
+        self._variable_rate = variable
+        self._refresh_media_info()
+
+    def set_codecs(self, video_codec: str, audio_codec: str) -> None:
+        self._video_codec = video_codec
+        self._audio_codec = audio_codec
+        self._refresh_media_info()
+
+    def _refresh_media_info(self) -> None:
+        if self._audio_mode:
+            self.frame_label.setText("Audio")
+            return
+        frame_text = "--" if self._frame_number < 0 else f"{self._frame_number:,}"
+        if self._variable_rate is True:
             fps_text = "VFR"
         else:
-            fps_text = f"{fps:.2f} FPS" if fps > 0 else "-- FPS"
-        self.frame_label.setText(f"Frame: {frame_text} | {fps_text}")
+            fps_text = f"{self._fps:.2f} FPS" if self._fps > 0 else "-- FPS"
+        codec_text = f"V: {self._video_codec or '—'} / A: {self._audio_codec or '—'}"
+        self.frame_label.setText(f"Frame: {frame_text} | {fps_text} | {codec_text}")
 
     def set_audio_mode(self, enabled: bool) -> None:
         self._audio_mode = enabled
         self.frame_back_button.setEnabled(not enabled)
         self.frame_forward_button.setEnabled(not enabled)
-        self.frame_label.setText("Audio" if enabled else "Frame: -- | -- FPS")
+        if enabled:
+            self.frame_label.setText("Audio")
+        else:
+            self._frame_number = -1
+            self._fps = 0.0
+            self._variable_rate = None
+            self._video_codec = ""
+            self._audio_codec = ""
+            self._refresh_media_info()
 
     def set_frame_inspection(self, enabled: bool) -> None:
         self._frame_inspection = enabled

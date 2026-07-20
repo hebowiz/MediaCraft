@@ -391,9 +391,9 @@ def test_audio_mode_disables_video_only_features_and_restores_them(
     )
 
     assert window.video_widget._audio_title.text() == "Track Title"
-    assert window.video_widget._audio_artist.text() == "アーティスト: Track Artist"
-    assert window.video_widget._audio_album.text() == "アルバム: Album Name"
-    assert window.video_widget._audio_bitrate.text() == "ビットレート: 320 kbps"
+    assert window.video_widget._audio_artist.text() == "Artist: Track Artist"
+    assert window.video_widget._audio_album.text() == "Album: Album Name"
+    assert window.video_widget._audio_bitrate.text() == "Codec: — / Bitrate: 320 kbps"
 
     window._add_paths([str(video)], play_first=True)
 
