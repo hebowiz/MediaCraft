@@ -380,6 +380,65 @@ def test_playlist_item_can_be_selected_and_double_clicked(qtbot, tmp_path) -> No
     assert backend.loaded_path == second.resolve()
 
 
+def test_play_button_starts_selected_playlist_item(qtbot, tmp_path) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    first = tmp_path / "first.mp4"
+    second = tmp_path / "second.mp4"
+    first.touch()
+    second.touch()
+    window._append_playlist_from_drop([str(first), str(second)])
+    window._set_playlist_visible(True)
+    qtbot.wait(200)
+
+    item = window.playlist_panel.list_widget.item(1)
+    position = window.playlist_panel.list_widget.visualItemRect(item).center()
+    qtbot.mouseClick(
+        window.playlist_panel.list_widget.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=position,
+    )
+    qtbot.mouseClick(window.control_bar.play_button, Qt.MouseButton.LeftButton)
+
+    assert backend.loaded_path == second.resolve()
+    assert not backend.paused
+
+
+def test_play_button_pauses_current_item_before_selected_item(qtbot, tmp_path) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    first = tmp_path / "first.mp4"
+    second = tmp_path / "second.mp4"
+    first.touch()
+    second.touch()
+    window._add_paths([str(first), str(second)], play_first=True)
+    window._set_playlist_visible(True)
+    qtbot.wait(200)
+
+    item = window.playlist_panel.list_widget.item(1)
+    position = window.playlist_panel.list_widget.visualItemRect(item).center()
+    qtbot.mouseClick(
+        window.playlist_panel.list_widget.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=position,
+    )
+    qtbot.mouseClick(window.control_bar.play_button, Qt.MouseButton.LeftButton)
+
+    assert backend.loaded_path == first.resolve()
+    assert backend.paused
+
+    qtbot.mouseClick(window.control_bar.play_button, Qt.MouseButton.LeftButton)
+
+    assert backend.loaded_path == second.resolve()
+    assert not backend.paused
+
+
 def test_selected_playlist_item_can_be_removed(qtbot, tmp_path) -> None:
     backend = FakeBackend()
     window = MainWindow(backend)

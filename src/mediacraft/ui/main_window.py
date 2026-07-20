@@ -469,7 +469,7 @@ class MainWindow(QMainWindow):
     def _connect_signals(self) -> None:
         controls = self.control_bar
         controls.previous_requested.connect(self._play_previous)
-        controls.play_pause_requested.connect(self._controller.toggle_play_pause)
+        controls.play_pause_requested.connect(self._play_selected_or_toggle)
         controls.stop_requested.connect(self._controller.stop)
         controls.next_requested.connect(self._play_next)
         controls.shuffle_requested.connect(self._playlist_controller.toggle_shuffle)
@@ -563,7 +563,7 @@ class MainWindow(QMainWindow):
             ("ファイル・表示", "F", "フルスクリーン切り替え", "同じ", self.fullscreen_action.trigger),
             ("ファイル・表示", "Esc", "フルスクリーン解除", "確認モード解除", self._handle_escape),
             ("再生", "Space", "再生／一時停止", "同じ", self._controller.toggle_play_pause),
-            ("再生", "Return", "再生／一時停止", "同じ", self._controller.toggle_play_pause),
+            ("再生", "Return", "選択項目を再生／一時停止", "同じ", self._play_selected_or_toggle),
             ("再生", "S", "停止して先頭へ戻る", "同じ", self._controller.stop),
             ("再生", "PgUp", "前のファイル", "同じ", self._play_previous),
             ("再生", "PgDown", "次のファイル", "同じ", self._play_next),
@@ -617,6 +617,18 @@ class MainWindow(QMainWindow):
     def _play_previous(self) -> None:
         if not self._playlist_controller.play_previous():
             self.statusBar().showMessage("前のファイルはありません。", 2000)
+
+    def _play_selected_or_toggle(self) -> None:
+        selected_index = self.playlist_panel.selected_index()
+        current_index = self._playlist_controller.current_index
+        if (
+            self._controller.state is not PlaybackState.PLAYING
+            and selected_index >= 0
+            and selected_index != current_index
+            and self._playlist_controller.request_play(selected_index)
+        ):
+            return
+        self._controller.toggle_play_pause()
 
     def _play_next(self) -> None:
         if not self._playlist_controller.play_next():

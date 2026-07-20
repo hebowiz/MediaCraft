@@ -165,6 +165,12 @@ class PlaylistPanel(QWidget):
             self.list_widget.clearSelection()
             self.list_widget.setCurrentRow(-1)
 
+    def selected_index(self) -> int:
+        item = self.list_widget.currentItem()
+        if item is None or not item.isSelected():
+            return -1
+        return self.list_widget.row(item)
+
     def _play_item(self, item: QListWidgetItem) -> None:
         self.play_requested.emit(self.list_widget.row(item))
 
