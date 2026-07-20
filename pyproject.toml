@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mediacraft"
-version = "0.3.0"
+version = "0.4.0"
 description = "A Windows desktop media player for comfortable frame-by-frame inspection"
 readme = "README.md"
 license = "GPL-3.0-or-later"

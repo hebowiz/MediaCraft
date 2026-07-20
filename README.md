@@ -180,11 +180,11 @@ Pythonを必要としないone-folder形式のアプリが
 自動実行されます。リリース時の主要依存バージョンは`requirements-lock.txt`で固定されます。
 
 ```powershell
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
-プレリリースタグは`v0.3.0-rc.1`のように指定します。GitHubの「Actions」→
+プレリリースタグは`v0.4.0-rc.1`のように指定します。GitHubの「Actions」→
 「Windows Release」→「Run workflow」から手動実行することもできます。既存Releaseに
 対して再実行した場合は、ZIPとSHA-256ファイルを新しいビルドで置き換えます。
 
