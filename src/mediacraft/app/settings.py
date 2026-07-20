@@ -1,4 +1,6 @@
-from PySide6.QtCore import QByteArray, QSettings
+from pathlib import Path
+
+from PySide6.QtCore import QByteArray, QSettings, QStandardPaths
 
 
 class AppSettings:
@@ -48,3 +50,23 @@ class AppSettings:
 
     def set_last_directory(self, path: str) -> None:
         self._settings.setValue("files/last_directory", path)
+
+    def screenshot_directory(self) -> str:
+        default_root = QStandardPaths.writableLocation(
+            QStandardPaths.StandardLocation.PicturesLocation
+        )
+        default = str(Path(default_root) / "MediaCraft") if default_root else ""
+        return str(self._settings.value("screenshot/directory", default))
+
+    def set_screenshot_directory(self, path: str) -> None:
+        self._settings.setValue("screenshot/directory", path)
+
+    def screenshot_format(self) -> str:
+        value = str(self._settings.value("screenshot/format", "png")).lower()
+        return value if value in {"png", "jpeg"} else "png"
+
+    def set_screenshot_format(self, image_format: str) -> None:
+        value = image_format.lower()
+        if value not in {"png", "jpeg"}:
+            raise ValueError(f"未対応のスクリーンショット形式です: {image_format}")
+        self._settings.setValue("screenshot/format", value)

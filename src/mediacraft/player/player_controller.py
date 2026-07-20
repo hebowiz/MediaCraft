@@ -32,6 +32,7 @@ class PlayerController(QObject):
         self._speed = 1.0
         self._position = 0.0
         self._duration = 0.0
+        self._frame_number = -1
         self._frame_inspection = False
         self._end_reported = False
 
@@ -71,6 +72,10 @@ class PlayerController(QObject):
     def duration(self) -> float:
         return self._duration
 
+    @property
+    def frame_number(self) -> int:
+        return self._frame_number
+
     def initialize(self, window_id: int) -> bool:
         if self._initialized:
             return True
@@ -105,6 +110,7 @@ class PlayerController(QObject):
         self._current_file = media_path
         self._position = 0.0
         self._duration = 0.0
+        self._frame_number = -1
         self._frame_inspection = False
         self._end_reported = False
         self.file_changed.emit(str(media_path))
@@ -145,6 +151,7 @@ class PlayerController(QObject):
             duration = 0.0
         self._position = 0.0
         self._duration = duration
+        self._frame_number = -1
         self.position_changed.emit(self._position, self._duration)
         self._frame_inspection = False
         self._end_reported = False
@@ -161,6 +168,7 @@ class PlayerController(QObject):
         self._current_file = None
         self._position = 0.0
         self._duration = 0.0
+        self._frame_number = -1
         self._frame_inspection = False
         self._end_reported = False
         self.position_changed.emit(0.0, 0.0)
@@ -228,6 +236,16 @@ class PlayerController(QObject):
             return False
         try:
             self._backend.set_ab_loop(start, end)
+        except BackendError as exc:
+            self._fail(str(exc))
+            return False
+        return True
+
+    def save_screenshot(self, path: str | Path, include_subtitles: bool = False) -> bool:
+        if self._current_file is None or not self._initialized:
+            return False
+        try:
+            self._backend.save_screenshot(Path(path), include_subtitles)
         except BackendError as exc:
             self._fail(str(exc))
             return False
@@ -301,6 +319,7 @@ class PlayerController(QObject):
         self.position_changed.emit(position, duration)
         if frame_number is None and frame_rate > 0:
             frame_number = max(0, round(position * frame_rate))
+        self._frame_number = frame_number if frame_number is not None else -1
         self.frame_metrics_changed.emit(frame_number if frame_number is not None else -1, frame_rate)
         if ended:
             if not self._end_reported:

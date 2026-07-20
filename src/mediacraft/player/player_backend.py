@@ -60,6 +60,10 @@ class PlayerBackend(ABC):
         pass
 
     @abstractmethod
+    def save_screenshot(self, path: Path, include_subtitles: bool = False) -> None:
+        pass
+
+    @abstractmethod
     def frame_step(self, count: int) -> None:
         pass
 

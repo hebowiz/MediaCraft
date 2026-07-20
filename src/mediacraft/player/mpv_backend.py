@@ -106,6 +106,13 @@ class MpvBackend(PlayerBackend):
 
         self._perform("A-Bリピートを変更できませんでした", update_loop)
 
+    def save_screenshot(self, path: Path, include_subtitles: bool = False) -> None:
+        flags = "subtitles" if include_subtitles else "video"
+        self._perform(
+            "スクリーンショットを保存できませんでした",
+            lambda player: player.command("screenshot-to-file", str(path), flags),
+        )
+
     def frame_step(self, count: int) -> None:
         if count == 0:
             return

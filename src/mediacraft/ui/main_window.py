@@ -4,6 +4,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QObject, QSignalBlocker, QTimer, Qt
 from PySide6.QtGui import (
     QAction,
+    QActionGroup,
     QCloseEvent,
     QDragEnterEvent,
     QDropEvent,
@@ -31,9 +32,11 @@ from mediacraft.player.playback_state import PlaybackState
 from mediacraft.playlist.playlist_controller import PlaylistController
 from mediacraft.playlist.metadata_probe import PlaylistMetadataProbe
 from mediacraft.repeat.ab_repeat_controller import ABRepeatController
+from mediacraft.screenshot.file_naming import build_screenshot_path
 from mediacraft.ui.control_bar import ControlBar
 from mediacraft.ui.fullscreen_overlay import FullscreenOverlay
 from mediacraft.ui.playlist_panel import PlaylistPanel
+from mediacraft.ui.toast_notification import ToastNotification
 from mediacraft.ui.video_widget import VideoWidget
 from mediacraft.utils.drop_paths import local_drop_paths
 
@@ -91,6 +94,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self._fullscreen_overlay = FullscreenOverlay(self)
+        self._toast = ToastNotification(self)
         self._overlay_hide_timer = QTimer(self)
         self._overlay_hide_timer.setSingleShot(True)
         self._overlay_hide_timer.setInterval(2000)
@@ -117,6 +121,8 @@ class MainWindow(QMainWindow):
             app.removeEventFilter(self)
         self._overlay_hide_timer.stop()
         self._fullscreen_overlay.hide()
+        self._set_fullscreen_cursor_hidden(False)
+        self._toast.stop()
         self._save_settings()
         self._media_probe.shutdown()
         self._playlist_metadata_probe.shutdown()
@@ -182,6 +188,39 @@ class MainWindow(QMainWindow):
         if path:
             self._add_paths([path], play_first=self._controller.current_file is None)
 
+    def take_screenshot(self) -> None:
+        media_path = self._controller.current_file
+        if media_path is None:
+            return
+        directory_text = self._settings.screenshot_directory()
+        directory = Path(directory_text) if directory_text else media_path.parent / "MediaCraft"
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            output_path = build_screenshot_path(
+                directory,
+                media_path,
+                self._controller.frame_number,
+                self._settings.screenshot_format(),
+            )
+        except (OSError, ValueError) as exc:
+            self._show_error(f"スクリーンショットの保存先を準備できませんでした: {exc}")
+            return
+
+        if not self._controller.save_screenshot(output_path, include_subtitles=False):
+            return
+        logger.info("Screenshot requested: %s", output_path)
+        self._show_toast(f"スクリーンショットを保存しました\n{output_path.name}")
+
+    def choose_screenshot_directory(self) -> None:
+        path = QFileDialog.getExistingDirectory(
+            self,
+            "スクリーンショット保存先を選択",
+            self._settings.screenshot_directory(),
+        )
+        if path:
+            self._settings.set_screenshot_directory(path)
+            self.statusBar().showMessage(f"スクリーンショット保存先: {path}", 4000)
+
     def toggle_fullscreen(self) -> None:
         if self.isFullScreen():
             self._leave_fullscreen()
@@ -206,6 +245,7 @@ class MainWindow(QMainWindow):
     def _leave_fullscreen(self) -> None:
         self._overlay_hide_timer.stop()
         self._fullscreen_overlay.hide()
+        self._set_fullscreen_cursor_hidden(False)
         control_bar = self._fullscreen_overlay.detach_control_bar()
         if control_bar is not None:
             self._main_layout.addWidget(control_bar)
@@ -219,6 +259,7 @@ class MainWindow(QMainWindow):
     def _show_fullscreen_overlay(self) -> None:
         if not self.isFullScreen():
             return
+        self._set_fullscreen_cursor_hidden(False)
         self._fullscreen_overlay.update_position(self)
         self._fullscreen_overlay.show()
         self._fullscreen_overlay.raise_()
@@ -230,6 +271,7 @@ class MainWindow(QMainWindow):
     def _hide_fullscreen_overlay(self) -> None:
         if self.isFullScreen() and self._playback_active:
             self._fullscreen_overlay.hide()
+            self._set_fullscreen_cursor_hidden(True)
 
     def _on_playback_changed(self, playing: bool) -> None:
         self._playback_active = playing
@@ -325,6 +367,30 @@ class MainWindow(QMainWindow):
         add_folder_action = QAction("フォルダを追加", self)
         add_folder_action.triggered.connect(self.add_folder)
         file_menu.addAction(add_folder_action)
+
+        file_menu.addSeparator()
+        self.screenshot_action = QAction("スクリーンショットを保存\tCtrl+S", self)
+        self.screenshot_action.setEnabled(False)
+        self.screenshot_action.triggered.connect(self.take_screenshot)
+        file_menu.addAction(self.screenshot_action)
+
+        screenshot_directory_action = QAction("スクリーンショット保存先を設定...", self)
+        screenshot_directory_action.triggered.connect(self.choose_screenshot_directory)
+        file_menu.addAction(screenshot_directory_action)
+
+        screenshot_format_menu = file_menu.addMenu("スクリーンショット形式")
+        self._screenshot_format_group = QActionGroup(self)
+        self._screenshot_format_group.setExclusive(True)
+        selected_format = self._settings.screenshot_format()
+        for label, image_format in (("PNG", "png"), ("JPEG", "jpeg")):
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.setChecked(image_format == selected_format)
+            action.triggered.connect(
+                lambda _checked=False, value=image_format: self._set_screenshot_format(value)
+            )
+            self._screenshot_format_group.addAction(action)
+            screenshot_format_menu.addAction(action)
 
         file_menu.addSeparator()
         exit_action = QAction("終了", self)
@@ -471,6 +537,9 @@ class MainWindow(QMainWindow):
         self._controller.file_changed.connect(
             lambda _path: self._set_ab_actions_enabled(True)
         )
+        self._controller.file_changed.connect(
+            lambda _path: self.screenshot_action.setEnabled(True)
+        )
         self._controller.error_occurred.connect(self._show_error)
         self._controller.media_ended.connect(self._on_media_ended)
         self._frame_controller.inspection_mode_changed.connect(controls.set_frame_inspection)
@@ -485,6 +554,11 @@ class MainWindow(QMainWindow):
         )
 
     def _create_shortcuts(self) -> None:
+        self.screenshot_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
+        self.screenshot_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        self.screenshot_shortcut.activated.connect(self.take_screenshot)
+        self._shortcuts.append(self.screenshot_shortcut)
+
         bindings = (
             ("Space", self._controller.toggle_play_pause),
             ("Return", self._controller.toggle_play_pause),
@@ -533,6 +607,7 @@ class MainWindow(QMainWindow):
         self.control_bar.set_playing(state is PlaybackState.PLAYING)
         if state is PlaybackState.NO_MEDIA:
             self._set_ab_actions_enabled(False)
+            self.screenshot_action.setEnabled(False)
 
     def _sync_ab_repeat_ui(self, start: float, end: float, enabled: bool) -> None:
         self.control_bar.set_ab_points(start, end, enabled)
@@ -553,6 +628,7 @@ class MainWindow(QMainWindow):
             return
         self.video_widget.set_media_loaded(False)
         self.frame_inspection_action.setEnabled(False)
+        self.screenshot_action.setEnabled(False)
         self.setWindowTitle("MediaCraft")
         self.statusBar().showMessage("ファイルを開くか、動画をドロップしてください。")
 
@@ -587,6 +663,33 @@ class MainWindow(QMainWindow):
     def _set_playlist_visible(self, visible: bool) -> None:
         self.playlist_panel.setVisible(visible)
         self.playlist_action.setChecked(visible)
+
+    def _set_screenshot_format(self, image_format: str) -> None:
+        self._settings.set_screenshot_format(image_format)
+        self.statusBar().showMessage(
+            f"スクリーンショット形式: {image_format.upper()}", 2500
+        )
+
+    def _set_fullscreen_cursor_hidden(self, hidden: bool) -> None:
+        if hidden:
+            cursor = Qt.CursorShape.BlankCursor
+            self.setCursor(cursor)
+            self.video_widget.setCursor(cursor)
+            self._fullscreen_overlay.setCursor(cursor)
+            return
+        self.unsetCursor()
+        self.video_widget.unsetCursor()
+        self._fullscreen_overlay.unsetCursor()
+
+    def _show_toast(self, message: str) -> None:
+        bottom_margin = (
+            self.control_bar.sizeHint().height() + 20 if self.isFullScreen() else 24
+        )
+        self._toast.show_message(
+            message,
+            self,
+            bottom_margin=bottom_margin,
+        )
 
     def _restore_settings(self) -> None:
         geometry = self._settings.window_geometry()

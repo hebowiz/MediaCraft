@@ -113,3 +113,18 @@ def test_clear_media_returns_controller_to_initial_state(qtbot, tmp_path) -> Non
     assert backend.clear_called
     assert controller.current_file is None
     assert controller.state is PlaybackState.NO_MEDIA
+
+
+def test_screenshot_is_forwarded_as_video_only(qtbot, tmp_path) -> None:
+    from conftest import FakeBackend
+
+    backend = FakeBackend()
+    controller = PlayerController(backend)
+    media_file = tmp_path / "sample.mp4"
+    media_file.touch()
+    output = tmp_path / "shot.png"
+    controller.initialize(123)
+    controller.load_file(media_file)
+
+    assert controller.save_screenshot(output)
+    assert backend.screenshot_requests == [(output, False)]

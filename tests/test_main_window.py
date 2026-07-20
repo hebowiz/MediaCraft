@@ -56,6 +56,7 @@ def test_fullscreen_uses_mouse_activated_overlay(qtbot, tmp_path) -> None:
 
     window._hide_fullscreen_overlay()
     assert not window._fullscreen_overlay.isVisible()
+    assert window.cursor().shape() is Qt.CursorShape.BlankCursor
 
     center = QPointF(window.video_widget.rect().center())
     event = QMouseEvent(
@@ -68,6 +69,7 @@ def test_fullscreen_uses_mouse_activated_overlay(qtbot, tmp_path) -> None:
     )
     QApplication.sendEvent(window.video_widget, event)
     qtbot.waitUntil(window._fullscreen_overlay.isVisible)
+    assert window.cursor().shape() is not Qt.CursorShape.BlankCursor
 
     window.leave_fullscreen()
     qtbot.waitUntil(lambda: not window.isFullScreen())
@@ -75,6 +77,53 @@ def test_fullscreen_uses_mouse_activated_overlay(qtbot, tmp_path) -> None:
     assert window.statusBar().isVisible()
     assert window.playlist_panel.isVisible()
     assert window.control_bar.parentWidget() is window.centralWidget()
+
+
+def test_screenshot_action_saves_video_frame_and_shows_toast(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    media_file = tmp_path / "sample.mp4"
+    media_file.touch()
+    screenshot_directory = tmp_path / "screenshots"
+    monkeypatch.setattr(
+        window._settings,
+        "screenshot_directory",
+        lambda: str(screenshot_directory),
+    )
+    monkeypatch.setattr(window._settings, "screenshot_format", lambda: "png")
+
+    assert "Ctrl+S" in window.screenshot_action.text()
+    assert window.screenshot_shortcut.key() == QKeySequence("Ctrl+S")
+    assert not window.screenshot_action.isEnabled()
+
+    window._load_file(str(media_file))
+    backend.current_position = 10.123
+    window._controller.refresh()
+    window.screenshot_action.trigger()
+
+    assert window.screenshot_action.isEnabled()
+    assert len(backend.screenshot_requests) == 1
+    output_path, include_subtitles = backend.screenshot_requests[0]
+    assert output_path.parent == screenshot_directory
+    assert output_path.name.startswith("sample_frame000304_")
+    assert output_path.suffix == ".png"
+    assert include_subtitles is False
+    assert window._toast.isVisible()
+    assert "スクリーンショットを保存しました" in window._toast.label.text()
+
+    window.toggle_fullscreen()
+    qtbot.waitUntil(window.isFullScreen)
+    qtbot.keyClick(
+        window,
+        Qt.Key.Key_S,
+        modifier=Qt.KeyboardModifier.ControlModifier,
+    )
+    qtbot.waitUntil(lambda: len(backend.screenshot_requests) == 2)
 
 
 def test_frame_inspection_menu_action_tracks_mode(qtbot, tmp_path) -> None:

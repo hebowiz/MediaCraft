@@ -20,6 +20,7 @@ class FakeBackend(PlayerBackend):
         self.clear_called = False
         self.fail_load_paths: set[Path] = set()
         self.ab_loop: tuple[float, float] | None = None
+        self.screenshot_requests: list[tuple[Path, bool]] = []
 
     def initialize(self, window_id: int) -> None:
         self.initialized = window_id >= 0
@@ -68,6 +69,9 @@ class FakeBackend(PlayerBackend):
 
     def set_ab_loop(self, start: float | None, end: float | None) -> None:
         self.ab_loop = (start, end) if start is not None and end is not None else None
+
+    def save_screenshot(self, path: Path, include_subtitles: bool = False) -> None:
+        self.screenshot_requests.append((path, include_subtitles))
 
     def frame_step(self, count: int) -> None:
         self.paused = True
