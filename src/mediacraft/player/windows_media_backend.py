@@ -24,6 +24,7 @@ class WindowsMediaBackend(PlayerBackend):
         self._control_factory = control_factory
         self._player: Any | None = None
         self._controls: Any | None = None
+        self._current_path: Path | None = None
         self._fps = 0.0
         self._duration = 0.0
         self._ab_loop: tuple[float, float] | None = None
@@ -70,6 +71,10 @@ class WindowsMediaBackend(PlayerBackend):
         self._play_requested = True
         self._stop_rate_playback()
         try:
+            if self._current_path is not None and self._controls is not None:
+                self._controls.dynamicCall("stop()")
+                player.dynamicCall("close()")
+                self._current_path = None
             self._set_properties(
                 player,
                 URL=str(path),
@@ -81,6 +86,7 @@ class WindowsMediaBackend(PlayerBackend):
             self._controls = player.querySubObject("controls")
             self._require_controls().dynamicCall("play()")
             self._set_native_rate(1.0)
+            self._current_path = path
             player.show()
             player.raise_()
         except Exception as exc:
@@ -113,6 +119,7 @@ class WindowsMediaBackend(PlayerBackend):
             return
         self._perform(lambda: self._require_controls().dynamicCall("stop()"))
         self._set_properties(self._player, URL="")
+        self._current_path = None
         self._player.hide()
         self._fps = 0.0
         self._duration = 0.0
@@ -254,6 +261,7 @@ class WindowsMediaBackend(PlayerBackend):
         finally:
             self._controls = None
             self._player = None
+            self._current_path = None
 
     def _require_player(self) -> Any:
         if self._player is None:

@@ -87,6 +87,29 @@ def test_windows_media_backend_controls_amv4_player(tmp_path, monkeypatch) -> No
     assert not backend.is_paused()
 
 
+def test_windows_media_backend_replaces_url_on_consecutive_loads(
+    tmp_path, monkeypatch
+) -> None:
+    player = FakeAxPlayer()
+    backend = WindowsMediaBackend(lambda: player)
+    first_path = tmp_path / "first.avi"
+    second_path = tmp_path / "second.avi"
+    first_path.touch()
+    second_path.touch()
+    monkeypatch.setattr(
+        "mediacraft.player.windows_media_backend.inspect_avi",
+        lambda _path: type("Info", (), {"frame_rate": 60.0, "duration": 12.5})(),
+    )
+
+    backend.initialize(0)
+    backend.load(first_path)
+    backend.load(second_path)
+
+    assert player.properties["URL"] == str(second_path)
+    assert player.calls.count(("close()", ())) == 1
+    assert player.controls.calls.count(("stop()", ())) == 1
+
+
 def test_windows_media_backend_enforces_ab_loop() -> None:
     player = FakeAxPlayer()
     backend = WindowsMediaBackend(lambda: player)
