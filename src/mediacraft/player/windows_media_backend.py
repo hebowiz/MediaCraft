@@ -1,7 +1,10 @@
 from collections.abc import Callable
 import logging
 from pathlib import Path
+from time import monotonic
 from typing import Any
+
+from PySide6.QtCore import QTimer, Qt
 
 from mediacraft.media.avi_info import inspect_avi
 from mediacraft.player.player_backend import BackendError, BackendUnavailableError, PlayerBackend
@@ -27,6 +30,15 @@ class WindowsMediaBackend(PlayerBackend):
         self._last_position = 0.0
         self._was_playing = False
         self._ended = False
+        self._speed = 1.0
+        self._play_requested = False
+        self._rate_playing = False
+        self._rate_last_clock: float | None = None
+        self._rate_target_position = 0.0
+        self._rate_timer = QTimer()
+        self._rate_timer.setInterval(16)
+        self._rate_timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self._rate_timer.timeout.connect(self._advance_rate_playback)
 
     def initialize(self, window_id: int) -> None:
         del window_id
@@ -55,6 +67,8 @@ class WindowsMediaBackend(PlayerBackend):
         self._last_position = 0.0
         self._was_playing = False
         self._ended = False
+        self._play_requested = True
+        self._stop_rate_playback()
         try:
             self._set_properties(
                 player,
@@ -66,6 +80,7 @@ class WindowsMediaBackend(PlayerBackend):
             )
             self._controls = player.querySubObject("controls")
             self._require_controls().dynamicCall("play()")
+            self._set_native_rate(1.0)
             player.show()
             player.raise_()
         except Exception as exc:
@@ -73,13 +88,18 @@ class WindowsMediaBackend(PlayerBackend):
 
     def play(self) -> None:
         self._ended = False
-        self._perform(lambda: self._require_controls().dynamicCall("play()"))
+        self._play_requested = True
+        self._update_rate_mode()
 
     def pause(self) -> None:
+        self._play_requested = False
+        self._stop_rate_playback()
         self._perform(lambda: self._require_controls().dynamicCall("pause()"))
 
     def stop(self) -> None:
         self._ended = False
+        self._play_requested = False
+        self._stop_rate_playback()
         self._was_playing = False
 
         def operation() -> None:
@@ -100,6 +120,8 @@ class WindowsMediaBackend(PlayerBackend):
         self._last_position = 0.0
         self._was_playing = False
         self._ended = False
+        self._play_requested = False
+        self._stop_rate_playback()
 
     def seek_absolute(self, seconds: float) -> None:
         controls = self._require_controls()
@@ -108,15 +130,19 @@ class WindowsMediaBackend(PlayerBackend):
             raise BackendError("AMV4動画をシークできませんでした。")
         self._last_position = target
         self._ended = False
+        self._rate_last_clock = monotonic() if self._rate_playing else None
+        self._rate_target_position = target
 
     def seek_relative(self, seconds: float) -> None:
         self.seek_absolute(self.position() + seconds)
 
     def set_speed(self, speed: float) -> None:
-        player = self._require_player()
-        settings = player.querySubObject("settings")
-        if settings is not None and not settings.setProperty("rate", float(speed)):
-            raise BackendError("AMV4動画の再生速度を変更できませんでした。")
+        self._speed = max(0.1, min(4.0, float(speed)))
+        # The AMV4 VfW path rejects WMP's native rate setting and silently
+        # remains at 1.0x. Keep WMP at its stable native rate and drive its
+        # supported frame-step operation from a precise timer instead.
+        self._set_native_rate(1.0)
+        self._update_rate_mode()
 
     def set_volume(self, volume: int) -> None:
         player = self._require_player()
@@ -160,15 +186,18 @@ class WindowsMediaBackend(PlayerBackend):
             controls.dynamicCall("step(int)", 1)
 
     def position(self) -> float:
-        controls = self._require_controls()
-        value = controls.dynamicCall("currentPosition")
-        try:
-            position = max(0.0, float(value or 0.0))
-        except (TypeError, ValueError):
-            position = 0.0
+        position = self._raw_position()
         state = int(self._require_player().dynamicCall("playState") or 0)
         if state == self.PLAYING:
             self._was_playing = True
+            if self._play_requested and self._speed != 1.0 and not self._rate_playing:
+                self._update_rate_mode()
+        elif self._rate_playing:
+            self._was_playing = True
+        elif self._play_requested and self._speed != 1.0:
+            # Loading is asynchronous. Start frame-clock playback once WMP
+            # reports that the media is ready to play.
+            self._update_rate_mode()
         if position > 0:
             self._last_position = position
         if self._ab_loop is not None and position >= self._ab_loop[1]:
@@ -189,15 +218,17 @@ class WindowsMediaBackend(PlayerBackend):
         return self._duration
 
     def is_paused(self) -> bool:
-        return int(self._require_player().dynamicCall("playState") or 0) != self.PLAYING
+        return not self._play_requested
 
     def estimated_frame_number(self) -> int | None:
-        return round(self.position() * self._fps) if self._fps > 0 else None
+        return round(self._last_position * self._fps) if self._fps > 0 else None
 
     def frame_rate(self) -> float:
         return self._fps
 
     def has_ended(self) -> bool:
+        if self._ended:
+            return True
         state = int(self._require_player().dynamicCall("playState") or 0)
         if state == self.MEDIA_ENDED:
             self._ended = True
@@ -211,6 +242,7 @@ class WindowsMediaBackend(PlayerBackend):
         return self._ended
 
     def shutdown(self) -> None:
+        self._stop_rate_playback()
         if self._player is None:
             return
         try:
@@ -235,6 +267,83 @@ class WindowsMediaBackend(PlayerBackend):
 
     def _end_tolerance(self) -> float:
         return max(0.1, 2.0 / self._fps) if self._fps > 0 else 0.25
+
+    def _raw_position(self) -> float:
+        value = self._require_controls().dynamicCall("currentPosition")
+        try:
+            return max(0.0, float(value or 0.0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _set_control_position(self, seconds: float) -> None:
+        if not self._require_controls().setProperty(
+            "currentPosition", max(0.0, float(seconds))
+        ):
+            raise BackendError("AMV4動画をシークできませんでした。")
+
+    def _set_native_rate(self, rate: float) -> None:
+        settings = self._require_player().querySubObject("settings")
+        if settings is not None and not settings.setProperty("rate", float(rate)):
+            raise BackendError("AMV4動画の再生速度を初期化できませんでした。")
+
+    def _update_rate_mode(self) -> None:
+        if not self._play_requested:
+            self._stop_rate_playback()
+            return
+        controls = self._require_controls()
+        if self._speed == 1.0:
+            self._stop_rate_playback()
+            controls.dynamicCall("play()")
+            return
+        if self._fps <= 0:
+            raise BackendError(
+                "AMV4動画のフレームレートを取得できないため、速度変更できません。"
+            )
+        state = int(self._require_player().dynamicCall("playState") or 0)
+        if state not in {self.PLAYING, 2} and not self._rate_playing:
+            return
+        controls.dynamicCall("pause()")
+        if not self._rate_playing:
+            self._rate_playing = True
+            self._rate_last_clock = monotonic()
+            self._rate_target_position = self._raw_position()
+            self._rate_timer.start()
+
+    def _stop_rate_playback(self) -> None:
+        self._rate_timer.stop()
+        self._rate_playing = False
+        self._rate_last_clock = None
+
+    def _advance_rate_playback(self) -> None:
+        if not self._rate_playing or not self._play_requested:
+            self._stop_rate_playback()
+            return
+        now = monotonic()
+        if self._rate_last_clock is None:
+            self._rate_last_clock = now
+            return
+        elapsed = max(0.0, now - self._rate_last_clock)
+        self._rate_last_clock = now
+        self._rate_target_position += elapsed * self._speed
+        frame_number = int(self._rate_target_position * self._fps)
+        target = frame_number / self._fps
+        if target <= self._last_position:
+            return
+
+        final_frame = (
+            max(0.0, self._duration - 1.0 / self._fps)
+            if self._duration > 0
+            else None
+        )
+        if final_frame is not None and target >= final_frame:
+            self._set_control_position(final_frame)
+            self._last_position = final_frame
+            self._ended = True
+            self._play_requested = False
+            self._stop_rate_playback()
+            return
+        self._set_control_position(target)
+        self._last_position = target
 
     @staticmethod
     def _set_properties(target: Any, **updates: object) -> None:

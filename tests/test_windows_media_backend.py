@@ -80,7 +80,7 @@ def test_windows_media_backend_controls_amv4_player(tmp_path, monkeypatch) -> No
 
     assert player.visible
     assert player.properties["URL"] == str(media_path)
-    assert player.settings.properties == {"volume": 72, "mute": True, "rate": 1.25}
+    assert player.settings.properties == {"volume": 72, "mute": True, "rate": 1.0}
     assert player.controls.properties["currentPosition"] == 6.0
     assert backend.duration() == 12.5
     assert backend.frame_rate() == 60.0
@@ -126,3 +126,51 @@ def test_windows_media_backend_rewinds_by_frame_duration() -> None:
     backend.frame_step(-1)
 
     assert player.controls.properties["currentPosition"] == 1.98
+
+
+def test_windows_media_backend_uses_frame_clock_for_unsupported_rate(
+    qtbot, monkeypatch,
+) -> None:
+    player = FakeAxPlayer()
+    player.controls.properties["currentPosition"] = 1.0
+    backend = WindowsMediaBackend(lambda: player)
+    backend.initialize(0)
+    backend._fps = 50.0
+    backend._duration = 10.0
+    backend._play_requested = True
+    clock = iter([100.0, 100.1])
+    monkeypatch.setattr(
+        "mediacraft.player.windows_media_backend.monotonic", lambda: next(clock)
+    )
+
+    backend.set_speed(2.0)
+    backend._rate_timer.stop()
+    backend._advance_rate_playback()
+
+    assert 1.18 <= player.controls.properties["currentPosition"] <= 1.2
+    assert player.settings.properties["rate"] == 1.0
+    backend._stop_rate_playback()
+
+
+def test_windows_media_backend_stops_frame_clock_at_end(qtbot, monkeypatch) -> None:
+    player = FakeAxPlayer()
+    player.controls.properties["currentPosition"] = 3.0
+    backend = WindowsMediaBackend(lambda: player)
+    backend.initialize(0)
+    backend._fps = 50.0
+    backend._duration = 3.3
+    backend._last_position = 3.0
+    backend._play_requested = True
+    clock = iter([100.0, 100.2])
+    monkeypatch.setattr(
+        "mediacraft.player.windows_media_backend.monotonic", lambda: next(clock)
+    )
+
+    backend.set_speed(2.0)
+    backend._rate_timer.stop()
+    backend._advance_rate_playback()
+
+    assert backend.has_ended()
+    assert not backend._play_requested
+    assert not backend._rate_timer.isActive()
+    assert 3.27 <= player.controls.properties["currentPosition"] <= 3.29
