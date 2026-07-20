@@ -1,21 +1,28 @@
 $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$pythonExe = Join-Path $projectRoot ".venv\Scripts\python.exe"
+$venvPython = Join-Path $projectRoot ".venv\Scripts\python.exe"
 $libmpvDll = Join-Path $projectRoot "vendor\mpv\libmpv-2.dll"
 $licenseFile = Join-Path $projectRoot "LICENSE"
 $noticesFile = Join-Path $projectRoot "THIRD_PARTY_NOTICES.md"
 $licenseDirectory = Join-Path $projectRoot "LICENSES"
 
-if (-not (Test-Path -LiteralPath $pythonExe -PathType Leaf)) {
-    throw "Virtual environment not found. Run: python -m venv .venv"
+if (Test-Path -LiteralPath $venvPython -PathType Leaf) {
+    $pythonExe = $venvPython
+}
+else {
+    $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+    if ($null -eq $pythonCommand) {
+        throw "Python not found. Create .venv or add Python to PATH."
+    }
+    $pythonExe = $pythonCommand.Source
 }
 if (-not (Test-Path -LiteralPath $libmpvDll -PathType Leaf)) {
-    throw "libmpv-2.dll not found. Run: .venv\Scripts\python.exe scripts\setup_mpv.py"
+    throw "libmpv-2.dll not found. Run: python scripts\setup_mpv.py"
 }
 foreach ($requiredPath in @($licenseFile, $noticesFile, $licenseDirectory)) {
     if (-not (Test-Path -LiteralPath $requiredPath)) {
-        throw "License material not found: $requiredPath. Run: .venv\Scripts\python.exe scripts\collect_licenses.py"
+        throw "License material not found: $requiredPath. Run: python scripts\collect_licenses.py"
     }
 }
 
