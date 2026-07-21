@@ -98,6 +98,7 @@ class MainWindow(QMainWindow):
         self._thumbnail_request_key: int | None = None
         self._media_fps = 0.0
         self._media_variable_rate: bool | None = None
+        self._pending_shell_paths: list[str] = []
         self._thumbnail_preload_enabled = self._settings.thumbnail_preload_enabled()
 
         self.control_bar = ControlBar()
@@ -131,6 +132,10 @@ class MainWindow(QMainWindow):
         self._overlay_hide_timer.setSingleShot(True)
         self._overlay_hide_timer.setInterval(2000)
         self._overlay_hide_timer.timeout.connect(self._hide_fullscreen_overlay)
+        self._shell_open_timer = QTimer(self)
+        self._shell_open_timer.setSingleShot(True)
+        self._shell_open_timer.setInterval(150)
+        self._shell_open_timer.timeout.connect(self._apply_shell_paths)
 
         app = QApplication.instance()
         if app is not None:
@@ -154,6 +159,7 @@ class MainWindow(QMainWindow):
         if app is not None:
             app.removeEventFilter(self)
         self._overlay_hide_timer.stop()
+        self._shell_open_timer.stop()
         self._thumbnail_timer.stop()
         self._thumbnail_preview.close()
         self._fullscreen_overlay.hide()
@@ -323,6 +329,36 @@ class MainWindow(QMainWindow):
         self._player_initialized = self._controller.initialize(int(self.video_widget.winId()))
         if self._player_initialized:
             self.statusBar().showMessage("再生エンジンを初期化しました。", 3000)
+            if self._pending_shell_paths:
+                self._apply_shell_paths()
+
+    def open_paths_from_shell(self, paths: list[str]) -> None:
+        supported_paths = [
+            str(path)
+            for value in paths
+            if (path := Path(value).expanduser().resolve()).is_file()
+            and path.suffix.lower() in self.MEDIA_EXTENSIONS
+        ]
+        if self.isMinimized():
+            self.showNormal()
+        else:
+            self.show()
+        self.raise_()
+        self.activateWindow()
+        for path in supported_paths:
+            if path not in self._pending_shell_paths:
+                self._pending_shell_paths.append(path)
+        if supported_paths:
+            self._shell_open_timer.start()
+
+    def _apply_shell_paths(self) -> None:
+        if not self._player_initialized or not self._pending_shell_paths:
+            return
+        paths = self._pending_shell_paths
+        self._pending_shell_paths = []
+        replace = self._settings.shell_open_mode() == "replace"
+        play_first = replace or self._controller.current_file is None
+        self._add_paths(paths, play_first=play_first, replace=replace)
 
     def _load_file(self, path: str) -> None:
         if not self._player_initialized:
@@ -894,6 +930,7 @@ class MainWindow(QMainWindow):
             self._settings.screenshot_directory(),
             self._settings.screenshot_format(),
             self._thumbnail_preload_enabled,
+            self._settings.shell_open_mode(),
             self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -902,6 +939,7 @@ class MainWindow(QMainWindow):
         self._settings.set_screenshot_directory(dialog.screenshot_directory)
         self._settings.set_screenshot_format(dialog.screenshot_format)
         self._settings.set_thumbnail_preload_enabled(dialog.thumbnail_preload_enabled)
+        self._settings.set_shell_open_mode(dialog.shell_open_mode)
         self._thumbnail_preload_enabled = dialog.thumbnail_preload_enabled
 
         if self._thumbnail_preload_enabled:

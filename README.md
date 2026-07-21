@@ -42,6 +42,16 @@ python -m mediacraft
 mediacraft
 ```
 
+MediaCraftは複数起動しません。起動済みの状態で再度実行した場合は、既存ウィンドウを
+前面へ表示します。エクスプローラーの「プログラムから開く」やファイル関連付け、または
+コマンドライン引数からメディアファイルを渡した場合は、既定ではそのファイル群で既存の
+プレイリストを置き換え、先頭のファイルから再生します。設定画面の
+「エクスプローラーから開く」で、現在のプレイリストへ追加する動作に変更できます。
+
+```powershell
+mediacraft "C:\path\to\video.mp4"
+```
+
 ## 利用できる機能
 
 - ファイル選択とドラッグ＆ドロップによる動画・音声ファイルの読み込み
@@ -180,11 +190,11 @@ Pythonを必要としないone-folder形式のアプリが
 自動実行されます。リリース時の主要依存バージョンは`requirements-lock.txt`で固定されます。
 
 ```powershell
-git tag v0.5.0
-git push origin v0.5.0
+git tag v0.6.0
+git push origin v0.6.0
 ```
 
-プレリリースタグは`v0.5.0-rc.1`のように指定します。GitHubの「Actions」→
+プレリリースタグは`v0.6.0-rc.1`のように指定します。GitHubの「Actions」→
 「Windows Release」→「Run workflow」から手動実行することもできます。既存Releaseに
 対して再実行した場合は、ZIPとSHA-256ファイルを新しいビルドで置き換えます。
 

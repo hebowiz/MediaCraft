@@ -21,6 +21,7 @@ class SettingsDialog(QDialog):
         screenshot_directory: str,
         screenshot_format: str,
         thumbnail_preload_enabled: bool,
+        shell_open_mode: str,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -45,6 +46,15 @@ class SettingsDialog(QDialog):
             "動画読み込み後に粗いサムネイルをバックグラウンド生成する"
         )
         self.thumbnail_preload_checkbox.setChecked(thumbnail_preload_enabled)
+        self.shell_open_mode_combo = QComboBox()
+        self.shell_open_mode_combo.addItem(
+            "新規プレイリストとして開く", "replace"
+        )
+        self.shell_open_mode_combo.addItem(
+            "現在のプレイリストへ追加", "append"
+        )
+        shell_mode_index = self.shell_open_mode_combo.findData(shell_open_mode)
+        self.shell_open_mode_combo.setCurrentIndex(max(0, shell_mode_index))
         note = QLabel(
             "無効にすると再生中のCPU・ストレージ負荷を抑えられます。\n"
             "ホバー位置のサムネイルは引き続き生成されます。"
@@ -57,6 +67,7 @@ class SettingsDialog(QDialog):
         form.addRow("スクリーンショット形式", self.screenshot_format_combo)
         form.addRow("サムネイル", self.thumbnail_preload_checkbox)
         form.addRow("", note)
+        form.addRow("エクスプローラーから開く", self.shell_open_mode_combo)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
@@ -81,6 +92,10 @@ class SettingsDialog(QDialog):
     @property
     def thumbnail_preload_enabled(self) -> bool:
         return self.thumbnail_preload_checkbox.isChecked()
+
+    @property
+    def shell_open_mode(self) -> str:
+        return str(self.shell_open_mode_combo.currentData())
 
     def _choose_screenshot_directory(self) -> None:
         start = self.screenshot_directory or str(Path.home())

@@ -25,8 +25,17 @@ def test_thumbnail_preload_setting_defaults_to_enabled() -> None:
     assert not settings.thumbnail_preload_enabled()
 
 
+def test_shell_open_mode_defaults_to_replace() -> None:
+    settings = AppSettings()
+    settings._settings = MemorySettings()
+
+    assert settings.shell_open_mode() == "replace"
+    settings.set_shell_open_mode("append")
+    assert settings.shell_open_mode() == "append"
+
+
 def test_settings_dialog_exposes_selected_values(qtbot, tmp_path, monkeypatch) -> None:
-    dialog = SettingsDialog("C:/old", "png", True)
+    dialog = SettingsDialog("C:/old", "png", True, "replace")
     qtbot.addWidget(dialog)
     selected = tmp_path / "captures"
     monkeypatch.setattr(
@@ -38,7 +47,9 @@ def test_settings_dialog_exposes_selected_values(qtbot, tmp_path, monkeypatch) -
     dialog._choose_screenshot_directory()
     dialog.screenshot_format_combo.setCurrentIndex(1)
     dialog.thumbnail_preload_checkbox.setChecked(False)
+    dialog.shell_open_mode_combo.setCurrentIndex(1)
 
     assert dialog.screenshot_directory == str(selected)
     assert dialog.screenshot_format == "jpeg"
     assert not dialog.thumbnail_preload_enabled
+    assert dialog.shell_open_mode == "append"

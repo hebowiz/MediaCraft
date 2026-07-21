@@ -4,8 +4,9 @@ from pathlib import Path
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
-from mediacraft.ui.main_window import MainWindow
 from mediacraft.app.logging_config import configure_logging, install_exception_hook
+from mediacraft.app.single_instance import SingleInstance, command_line_paths
+from mediacraft.ui.main_window import MainWindow
 
 
 DARK_STYLESHEET = """
@@ -67,10 +68,18 @@ def create_application(argv: list[str] | None = None) -> QApplication:
     return app
 
 
-def run() -> int:
-    app = create_application()
+def run(argv: list[str] | None = None) -> int:
+    actual_argv = argv if argv is not None else sys.argv
+    app = create_application(actual_argv)
     configure_logging()
     install_exception_hook()
+    startup_paths = command_line_paths(actual_argv[1:])
+    single_instance = SingleInstance(app)
+    if not single_instance.acquire_or_notify(startup_paths):
+        return 0
     window = MainWindow()
+    single_instance.paths_received.connect(window.open_paths_from_shell)
     window.show()
+    if startup_paths:
+        window.open_paths_from_shell(startup_paths)
     return app.exec()

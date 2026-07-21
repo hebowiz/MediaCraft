@@ -76,3 +76,12 @@ class AppSettings:
 
     def set_thumbnail_preload_enabled(self, enabled: bool) -> None:
         self._settings.setValue("thumbnail/preload_enabled", enabled)
+
+    def shell_open_mode(self) -> str:
+        value = str(self._settings.value("files/shell_open_mode", "replace"))
+        return value if value in {"replace", "append"} else "replace"
+
+    def set_shell_open_mode(self, mode: str) -> None:
+        if mode not in {"replace", "append"}:
+            raise ValueError(f"未対応のシェル起動動作です: {mode}")
+        self._settings.setValue("files/shell_open_mode", mode)

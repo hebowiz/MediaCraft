@@ -52,6 +52,7 @@ def test_settings_dialog_updates_runtime_preferences(qtbot, monkeypatch, tmp_pat
         screenshot_directory = str(tmp_path / "captures")
         screenshot_format = "jpeg"
         thumbnail_preload_enabled = False
+        shell_open_mode = "append"
 
         def __init__(self, *_args, **_kwargs) -> None:
             pass
@@ -86,6 +87,11 @@ def test_settings_dialog_updates_runtime_preferences(qtbot, monkeypatch, tmp_pat
         "set_thumbnail_preload_enabled",
         lambda value: saved.__setitem__("preload", value),
     )
+    monkeypatch.setattr(
+        window._settings,
+        "set_shell_open_mode",
+        lambda value: saved.__setitem__("shell_open_mode", value),
+    )
 
     window.open_settings()
 
@@ -93,9 +99,59 @@ def test_settings_dialog_updates_runtime_preferences(qtbot, monkeypatch, tmp_pat
         "directory": str(tmp_path / "captures"),
         "format": "jpeg",
         "preload": False,
+        "shell_open_mode": "append",
     }
     assert not window._thumbnail_preload_enabled
     assert cancelled
+
+
+def test_shell_open_replaces_playlist_by_default(qtbot, monkeypatch, tmp_path) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    original = tmp_path / "original.mp4"
+    incoming = tmp_path / "incoming.mp4"
+    original.touch()
+    incoming.touch()
+    window._add_paths([str(original)], play_first=True)
+    monkeypatch.setattr(window._settings, "shell_open_mode", lambda: "replace")
+
+    window.open_paths_from_shell([str(incoming)])
+    window._shell_open_timer.stop()
+    window._apply_shell_paths()
+
+    assert [entry.path for entry in window._playlist_controller.entries] == [
+        incoming.resolve()
+    ]
+    assert backend.loaded_path == incoming.resolve()
+
+
+def test_shell_open_can_append_without_interrupting_playback(
+    qtbot, monkeypatch, tmp_path
+) -> None:
+    backend = FakeBackend()
+    window = MainWindow(backend)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: backend.initialized)
+    current = tmp_path / "current.mp4"
+    incoming = tmp_path / "incoming.mp4"
+    current.touch()
+    incoming.touch()
+    window._add_paths([str(current)], play_first=True)
+    monkeypatch.setattr(window._settings, "shell_open_mode", lambda: "append")
+
+    window.open_paths_from_shell([str(incoming)])
+    window._shell_open_timer.stop()
+    window._apply_shell_paths()
+
+    assert [entry.path for entry in window._playlist_controller.entries] == [
+        current.resolve(),
+        incoming.resolve(),
+    ]
+    assert backend.loaded_path == current.resolve()
 
 
 def test_fullscreen_uses_mouse_activated_overlay(qtbot, tmp_path) -> None:
